@@ -6,13 +6,15 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
+    "scheme": "polydraft",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0a0a1a"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.polydraft.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,10 +29,23 @@
       "expo-font",
       "expo-image",
       "expo-haptics",
-      "expo-av"
+      "expo-av",
+      "expo-crypto",
+      "expo-clipboard"
     ],
     "extra": {
-      "eas": {}
+      "SUPABASE_URL": "${EXPO_PUBLIC_SUPABASE_URL}",
+      "SUPABASE_ANON_KEY": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
+      "ACTIVE_VENUE": "${EXPO_PUBLIC_ACTIVE_VENUE}",
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/your-eas-project-id"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }
