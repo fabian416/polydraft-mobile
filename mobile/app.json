@@ -23,7 +23,11 @@
       },
       "package": "com.polydraft.mobile",
       "minSdkVersion": 26,
-      "targetSdkVersion": 34
+      "targetSdkVersion": 34,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-font",
@@ -35,14 +39,12 @@
       "SUPABASE_ANON_KEY": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
       "ACTIVE_VENUE": "${EXPO_PUBLIC_ACTIVE_VENUE}",
       "eas": {
-        "projectId": "your-eas-project-id"
+        "projectId": "8a4dc842-4f39-4c2f-8e24-f95759bfea40"
       }
-    },
-    "updates": {
-      "url": "https://u.expo.dev/your-eas-project-id"
     },
     "runtimeVersion": {
       "policy": "appVersion"
-    }
+    },
+    "owner": "diazfabian199"
   }
 }
