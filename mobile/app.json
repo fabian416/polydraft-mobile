@@ -28,10 +28,7 @@
     "plugins": [
       "expo-font",
       "expo-image",
-      "expo-haptics",
-      "expo-av",
-      "expo-crypto",
-      "expo-clipboard"
+      "expo-av"
     ],
     "extra": {
       "SUPABASE_URL": "${EXPO_PUBLIC_SUPABASE_URL}",
