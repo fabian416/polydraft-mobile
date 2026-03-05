@@ -1,0 +1,52 @@
+{
+  "name": "mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@react-navigation/bottom-tabs": "^7.15.5",
+    "@react-navigation/native": "^7.1.33",
+    "@react-navigation/native-stack": "^7.14.4",
+    "@solana-mobile/mobile-wallet-adapter-protocol": "^2.2.5",
+    "@solana-mobile/mobile-wallet-adapter-protocol-web3js": "^2.2.5",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "@supabase/supabase-js": "^2.98.0",
+    "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
+    "expo": "~55.0.5",
+    "expo-av": "^16.0.8",
+    "expo-clipboard": "~55.0.8",
+    "expo-crypto": "~55.0.9",
+    "expo-dev-client": "~55.0.11",
+    "expo-font": "~55.0.4",
+    "expo-haptics": "~55.0.8",
+    "expo-image": "~55.0.6",
+    "expo-status-bar": "~55.0.4",
+    "expo-system-ui": "~55.0.9",
+    "framer-motion": "^12.35.0",
+    "react": "19.2.0",
+    "react-native": "0.83.2",
+    "react-native-gesture-handler": "~2.30.0",
+    "react-native-reanimated": "^4.2.1",
+    "react-native-safe-area-context": "~5.6.2",
+    "react-native-screens": "~4.23.0",
+    "tweetnacl": "^1.0.3",
+    "uuid": "^13.0.0",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/react": "~19.2.2",
+    "@types/uuid": "^10.0.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

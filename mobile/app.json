@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Polydraft",
+    "slug": "polydraft",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a1a"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a1a"
+      },
+      "package": "com.polydraft.mobile",
+      "minSdkVersion": 26,
+      "targetSdkVersion": 34
+    },
+    "plugins": [
+      "expo-font",
+      "expo-image",
+      "expo-haptics",
+      "expo-av"
+    ],
+    "extra": {
+      "eas": {}
+    }
+  }
+}
