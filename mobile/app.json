@@ -42,9 +42,7 @@
         "projectId": "8a4dc842-4f39-4c2f-8e24-f95759bfea40"
       }
     },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
+    "runtimeVersion": "1.0.0",
     "owner": "diazfabian199"
   }
 }
