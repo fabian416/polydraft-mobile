@@ -1,20 +1,33 @@
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { WalletProvider } from './src/providers/WalletProvider';
+import { RootNavigator } from './src/navigation';
+
+const DarkTheme = {
+  ...DefaultTheme,
+  dark: true,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: '#00ff88',
+    background: '#0a0a1a',
+    card: '#1a1a2e',
+    text: '#ffffff',
+    border: 'rgba(255,255,255,0.1)',
+    notification: '#00ff88',
+  },
+};
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <WalletProvider>
+        <NavigationContainer theme={DarkTheme}>
+          <RootNavigator />
+          <StatusBar style="light" />
+        </NavigationContainer>
+      </WalletProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

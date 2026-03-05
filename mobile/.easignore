@@ -1,0 +1,49 @@
+# ============================================
+# EAS Build Ignore
+# ============================================
+# Files excluded from EAS build uploads.
+# Keeps upload size small and build times fast.
+
+# Tests
+__tests__/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+jest.config.*
+coverage/
+
+# Development tools
+.vscode/
+.idea/
+.expo/
+
+# Documentation
+*.md
+!README.md
+LICENSE
+
+# Source maps (generated at build time)
+*.map
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Environment files (secrets loaded via EAS secrets)
+.env
+.env.local
+.env*.local
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Temporary files
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*

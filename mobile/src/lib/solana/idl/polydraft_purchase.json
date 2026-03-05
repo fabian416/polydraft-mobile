@@ -1,0 +1,43 @@
+{
+  "version": "0.1.0",
+  "name": "polydraft_purchase",
+  "instructions": [
+    {
+      "name": "buyPack",
+      "accounts": [
+        { "name": "buyer", "isMut": true, "isSigner": true },
+        { "name": "buyerUsdc", "isMut": true, "isSigner": false },
+        { "name": "treasuryUsdc", "isMut": true, "isSigner": false },
+        { "name": "usdcMint", "isMut": false, "isSigner": false },
+        { "name": "receipt", "isMut": true, "isSigner": false },
+        { "name": "tokenProgram", "isMut": false, "isSigner": false },
+        { "name": "systemProgram", "isMut": false, "isSigner": false }
+      ],
+      "args": [
+        { "name": "clientSeed", "type": "string" },
+        { "name": "amount", "type": "u64" }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PurchaseReceipt",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "buyer", "type": "publicKey" },
+          { "name": "amount", "type": "u64" },
+          { "name": "clientSeed", "type": "string" },
+          { "name": "timestamp", "type": "i64" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "SeedTooLong", "msg": "client_seed must be <= 36 bytes" },
+    { "code": 6001, "name": "ZeroAmount", "msg": "amount must be > 0" },
+    { "code": 6002, "name": "InvalidMint", "msg": "Invalid USDC mint" },
+    { "code": 6003, "name": "InvalidTreasury", "msg": "Invalid treasury account" }
+  ]
+}
