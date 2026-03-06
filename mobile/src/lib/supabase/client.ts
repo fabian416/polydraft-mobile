@@ -26,11 +26,16 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   );
 }
 
+// Use a placeholder URL if not configured to prevent crash on startup.
+// The app will show errors when trying to fetch data, but won't crash.
+const safeUrl = SUPABASE_URL || 'https://placeholder.supabase.co';
+const safeKey = SUPABASE_ANON_KEY || 'placeholder';
+
 /**
  * Singleton Supabase client for the mobile app.
  * Auth tokens are persisted to AsyncStorage automatically.
  */
-export const supabase = createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export const supabase = createSupabaseClient(safeUrl, safeKey, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,
