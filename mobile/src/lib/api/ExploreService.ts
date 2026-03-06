@@ -112,8 +112,8 @@ function transformEventToExploreMarket(event: Event): ExploreMarket {
 // ============================================
 
 /**
- * Get featured explore markets.
- * Replaces GET /api/explore/markets.
+ * Get explore markets.
+ * Fetches active and upcoming events from the database.
  */
 export async function getMarkets(): Promise<{
   markets: ExploreMarket[];
@@ -122,8 +122,9 @@ export async function getMarkets(): Promise<{
   const { data: events, error } = await supabase
     .from('events')
     .select('*')
-    .in('polymarket_id', FEATURED_POLYMARKET_IDS)
-    .order('volume', { ascending: false });
+    .in('status', ['active', 'upcoming'])
+    .order('created_at', { ascending: false })
+    .limit(20);
 
   if (error) {
     console.error('Error fetching explore markets:', error);

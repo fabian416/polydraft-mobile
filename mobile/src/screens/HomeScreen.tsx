@@ -1,18 +1,15 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Pressable, Animated, Easing } from 'react-native';
+import { View, StyleSheet, Pressable, Animated, Easing, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/layout/ScreenContainer';
-import { PixelText, PixelCard } from '../components/common';
+import { PixelText } from '../components/common';
 import { colors, spacing, borderRadius, borderWidth, shadows } from '../lib/theme';
-import type { RootStackParamList, MainTabParamList } from '../navigation/types';
-import type { CompositeNavigationProp } from '@react-navigation/native';
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { RootStackParamList } from '../navigation/types';
 
-type HomeNav = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList, 'Game'>,
-  NativeStackNavigationProp<RootStackParamList>
->;
+type HomeNav = NativeStackNavigationProp<RootStackParamList>;
+
+const jupiterLogo = require('../../assets/images/jupiter-logo.png');
 
 export function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
@@ -72,7 +69,7 @@ export function HomeScreen() {
         >
           <PixelText
             variant="heading"
-            size="3xl"
+            size="2xl"
             color={colors.foreground}
             shadow
           >
@@ -80,18 +77,17 @@ export function HomeScreen() {
           </PixelText>
         </Animated.View>
 
-        <Animated.View style={{ opacity: subtitleAnim }}>
+        <Animated.View style={[styles.subtitleWrap, { opacity: subtitleAnim }]}>
           <PixelText
             variant="body"
             size="lg"
             color={colors.textMuted}
-            style={styles.subtitle}
           >
             Choose your mode
           </PixelText>
         </Animated.View>
 
-        {/* Mode Cards */}
+        {/* Mode Cards - Stacked */}
         <View style={styles.cardsContainer}>
           {/* Explore Card */}
           <ModeCard
@@ -101,8 +97,10 @@ export function HomeScreen() {
             badge="Jupiter"
             accentColor="#a855f7"
             badgeColor="#a855f7"
-            icon="🔮"
-            onPress={() => navigation.navigate('Game')}
+            iconType="image"
+            onPress={() =>
+              navigation.navigate('MainTabs', { screen: 'Explore' })
+            }
           />
 
           {/* Play Draft Card */}
@@ -113,8 +111,10 @@ export function HomeScreen() {
             badge="Weekly"
             accentColor={colors.game.gold}
             badgeColor={colors.game.gold}
-            icon="🃏"
-            onPress={() => navigation.navigate('Game')}
+            iconType="emoji"
+            onPress={() =>
+              navigation.navigate('MainTabs', { screen: 'Game' })
+            }
           />
         </View>
       </View>
@@ -129,7 +129,7 @@ interface ModeCardProps {
   badge: string;
   accentColor: string;
   badgeColor: string;
-  icon: string;
+  iconType: 'image' | 'emoji';
   onPress: () => void;
 }
 
@@ -140,7 +140,7 @@ function ModeCard({
   badge,
   accentColor,
   badgeColor,
-  icon,
+  iconType,
   onPress,
 }: ModeCardProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -148,24 +148,47 @@ function ModeCard({
 
   useEffect(() => {
     const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(iconFloat, {
-          toValue: -4,
-          duration: 2000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(iconFloat, {
-          toValue: 0,
-          duration: 2000,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
+      iconType === 'emoji'
+        ? // Joker rotate wobble
+          Animated.sequence([
+            Animated.timing(iconFloat, {
+              toValue: 5,
+              duration: 1500,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(iconFloat, {
+              toValue: -5,
+              duration: 1500,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(iconFloat, {
+              toValue: 0,
+              duration: 1500,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ])
+        : // Jupiter float
+          Animated.sequence([
+            Animated.timing(iconFloat, {
+              toValue: -6,
+              duration: 2000,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+            Animated.timing(iconFloat, {
+              toValue: 0,
+              duration: 2000,
+              easing: Easing.inOut(Easing.ease),
+              useNativeDriver: true,
+            }),
+          ])
     );
     animation.start();
     return () => animation.stop();
-  }, [iconFloat]);
+  }, [iconFloat, iconType]);
 
   const handlePressIn = () => {
     Animated.spring(scaleAnim, {
@@ -187,26 +210,29 @@ function ModeCard({
 
   return (
     <Animated.View
-      style={{
-        opacity: anim,
-        transform: [
-          {
-            translateY: anim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [50, 0],
-            }),
-          },
-          {
-            scale: Animated.multiply(
-              anim.interpolate({
+      style={[
+        styles.cardWrapper,
+        {
+          opacity: anim,
+          transform: [
+            {
+              translateY: anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0.8, 1],
+                outputRange: [50, 0],
               }),
-              scaleAnim
-            ),
-          },
-        ],
-      }}
+            },
+            {
+              scale: Animated.multiply(
+                anim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.8, 1],
+                }),
+                scaleAnim
+              ),
+            },
+          ],
+        },
+      ]}
     >
       <Pressable
         onPress={onPress}
@@ -232,18 +258,40 @@ function ModeCard({
           </View>
 
           {/* Icon */}
-          <Animated.View style={{ transform: [{ translateY: iconFloat }] }}>
-            <PixelText variant="body" size="4xl">
-              {icon}
-            </PixelText>
-          </Animated.View>
+          {iconType === 'image' ? (
+            <Animated.View style={{ transform: [{ translateY: iconFloat }] }}>
+              <Image
+                source={jupiterLogo}
+                style={styles.jupiterLogo}
+                resizeMode="contain"
+              />
+            </Animated.View>
+          ) : (
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    rotate: iconFloat.interpolate({
+                      inputRange: [-5, 0, 5],
+                      outputRange: ['-5deg', '0deg', '5deg'],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <PixelText variant="body" size="4xl">
+                {'\u{1F0CF}'}
+              </PixelText>
+            </Animated.View>
+          )}
 
           {/* Title */}
           <PixelText
             variant="heading"
-            size="lg"
+            size="xl"
             color={accentColor}
             shadow
+            style={styles.cardTitle}
           >
             {title}
           </PixelText>
@@ -253,6 +301,7 @@ function ModeCard({
             variant="body"
             size="base"
             color={colors.textMuted}
+            style={styles.cardDescription}
           >
             {description}
           </PixelText>
@@ -265,37 +314,52 @@ function ModeCard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: spacing[4],
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   titleContainer: {
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
+    alignItems: 'center',
   },
-  subtitle: {
-    marginBottom: spacing[8],
+  subtitleWrap: {
+    alignItems: 'center',
+    marginBottom: spacing[6],
   },
   cardsContainer: {
     width: '100%',
     gap: spacing[4],
   },
+  cardWrapper: {
+  },
   modeCard: {
     backgroundColor: colors.card.bg,
     borderWidth: borderWidth.thick,
     borderRadius: borderRadius.xl,
-    padding: spacing[6],
+    paddingVertical: spacing[6],
+    paddingHorizontal: spacing[6],
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing[3],
-    minHeight: 180,
+    minHeight: 190,
     ...shadows.pixelLg,
   },
   cardBadge: {
     position: 'absolute',
-    top: spacing[3],
-    right: spacing[3],
+    top: spacing[2],
+    right: spacing[2],
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
     borderRadius: borderRadius.md,
+  },
+  jupiterLogo: {
+    width: 56,
+    height: 56,
+  },
+  cardTitle: {
+    textAlign: 'center',
+  },
+  cardDescription: {
+    textAlign: 'center',
   },
 });

@@ -1,29 +1,53 @@
 /**
  * Audio manager for game SFX using expo-av.
- * Provides sound playback with preloading and caching.
- * Gracefully handles missing files (no crash).
+ * Matches the sound names from the PSG1 web version.
+ *
+ * Currently a no-op when .mp3 files aren't bundled — structured so
+ * dropping real assets into /assets/sounds/ and uncommenting the
+ * require() lines below is all that's needed.
  */
 
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Sound asset map — keyed by logical name
-// Assets are bundled via require() for Expo compatibility
-const SOUND_ASSETS = {
-  pack_open: require('../assets/audio/pack_open.mp3'),
-  card_deal: require('../assets/audio/card_deal.mp3'),
-  reveal_correct: require('../assets/audio/reveal_correct.mp3'),
-  reveal_wrong: require('../assets/audio/reveal_wrong.mp3'),
-  coin_collect: require('../assets/audio/coin_collect.mp3'),
-  level_up: require('../assets/audio/level_up.mp3'),
-} as const;
+export type SoundName =
+  | 'pack_open'
+  | 'card_deal'
+  | 'card_pick'
+  | 'reveal_common'
+  | 'reveal_rare'
+  | 'reveal_epic'
+  | 'reveal_legendary'
+  | 'modal_open'
+  | 'modal_close'
+  | 'purchase_confirm'
+  | 'purchase_success'
+  | 'error';
 
-export type SoundName = keyof typeof SOUND_ASSETS;
+/**
+ * Map of sound names to bundled assets.
+ * Uncomment and add require() calls when .mp3 files are available
+ * in /assets/sounds/:
+ */
+const soundFiles: Partial<Record<SoundName, number>> = {
+  // pack_open: require('../../assets/sounds/pack_open.mp3'),
+  // card_deal: require('../../assets/sounds/card_deal.mp3'),
+  // card_pick: require('../../assets/sounds/card_pick.mp3'),
+  // reveal_common: require('../../assets/sounds/reveal_common.mp3'),
+  // reveal_rare: require('../../assets/sounds/reveal_rare.mp3'),
+  // reveal_epic: require('../../assets/sounds/reveal_epic.mp3'),
+  // reveal_legendary: require('../../assets/sounds/reveal_legendary.mp3'),
+  // modal_open: require('../../assets/sounds/modal_open.mp3'),
+  // modal_close: require('../../assets/sounds/modal_close.mp3'),
+  // purchase_confirm: require('../../assets/sounds/purchase_confirm.mp3'),
+  // purchase_success: require('../../assets/sounds/purchase_success.mp3'),
+  // error: require('../../assets/sounds/error.mp3'),
+};
 
 const MUTED_KEY = 'polydraft_audio_muted';
 
 // Cache of loaded Sound objects
-const cache = new Map<SoundName, Audio.Sound>();
+const loadedSounds: Partial<Record<SoundName, Audio.Sound>> = {};
 
 let muted = false;
 let initialized = false;
@@ -37,18 +61,12 @@ async function initAudio(): Promise<void> {
   initialized = true;
 
   try {
-    // Configure audio mode for game SFX
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: false,
-      staysActiveInBackground: false,
-    });
-
     const stored = await AsyncStorage.getItem(MUTED_KEY);
     if (stored === 'true') {
       muted = true;
     }
   } catch {
-    // AsyncStorage or Audio unavailable — fail silently
+    // AsyncStorage unavailable — fail silently
   }
 }
 
@@ -56,20 +74,25 @@ async function initAudio(): Promise<void> {
 initAudio();
 
 /**
- * Preload all sounds into memory for instant playback.
+ * Configure audio mode for game SFX.
  * Call early in the app lifecycle (e.g., on first screen mount).
  */
 export async function preloadSounds(): Promise<void> {
   await initAudio();
 
-  const names = Object.keys(SOUND_ASSETS) as SoundName[];
+  await Audio.setAudioModeAsync({
+    playsInSilentModeIOS: true,
+    shouldDuckAndroid: true,
+  });
 
+  // Pre-load any available sound files
+  const entries = Object.entries(soundFiles) as [SoundName, number][];
   await Promise.allSettled(
-    names.map(async (name) => {
-      if (cache.has(name)) return;
+    entries.map(async ([name, file]) => {
+      if (loadedSounds[name]) return;
       try {
-        const { sound } = await Audio.Sound.createAsync(SOUND_ASSETS[name]);
-        cache.set(name, sound);
+        const { sound } = await Audio.Sound.createAsync(file);
+        loadedSounds[name] = sound;
       } catch {
         // Asset missing or load failed — skip silently
       }
@@ -79,29 +102,26 @@ export async function preloadSounds(): Promise<void> {
 
 /**
  * Play a named sound effect.
- * If the sound isn't preloaded, it will be loaded on-demand.
+ * If the sound file isn't available, this is a silent no-op.
  */
 export async function playSound(name: SoundName): Promise<void> {
   if (muted) return;
 
   try {
-    let sound = cache.get(name);
+    const file = soundFiles[name];
+    if (!file) return; // No sound file available yet
 
-    if (!sound) {
-      // Load on demand
-      const asset = SOUND_ASSETS[name];
-      if (!asset) return;
-
-      const { sound: newSound } = await Audio.Sound.createAsync(asset);
-      cache.set(name, newSound);
-      sound = newSound;
+    // Reuse or create sound
+    if (!loadedSounds[name]) {
+      const { sound } = await Audio.Sound.createAsync(file);
+      loadedSounds[name] = sound;
     }
 
-    // Replay from start if already played
+    const sound = loadedSounds[name]!;
     await sound.setPositionAsync(0);
     await sound.playAsync();
   } catch {
-    // Playback failed — fail silently
+    // Sound playback not critical — fail silently
   }
 }
 
@@ -130,7 +150,12 @@ export function isMuted(): boolean {
  */
 export async function unloadSounds(): Promise<void> {
   await Promise.allSettled(
-    Array.from(cache.values()).map((sound) => sound.unloadAsync())
+    Object.values(loadedSounds)
+      .filter((s): s is Audio.Sound => s !== undefined)
+      .map((sound) => sound.unloadAsync())
   );
-  cache.clear();
+
+  for (const key of Object.keys(loadedSounds) as SoundName[]) {
+    delete loadedSounds[key];
+  }
 }

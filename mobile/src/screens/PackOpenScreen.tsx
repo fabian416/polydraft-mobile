@@ -1,43 +1,164 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  View,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+  Animated,
+  Easing,
+  Dimensions,
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
 import { v4 as uuidv4 } from 'uuid';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ScreenContainer } from '../components/layout/ScreenContainer';
 import { PixelText, PixelButton } from '../components/common';
 import { DraftPicker } from '../components/game/DraftPicker';
 import { ProgressDots } from '../components/game/ProgressDots';
+import { PackSprite } from '../components/game/PackSprite';
+import { PackBurst } from '../components/animations/PackBurst';
 import { useCurrentPackStore } from '../stores/currentPack';
 import { useMyPacksStore } from '../stores/myPacks';
 import { useSessionStore } from '../stores/session';
+import { playSound } from '../lib/audio';
 import { getEventsForPack } from '../lib/pools';
 import { createPackWithPicks } from '../lib/api/PackService';
-import { colors, spacing } from '../lib/theme';
+import { checkAvailability, WEEKLY_PACK_LIMIT } from '../lib/api/PackService';
+import {
+  calculateMaxPotentialPoints,
+  calculateCombinedProbability,
+  formatProbability,
+} from '../lib/scoring/calculator';
+import { getEventRarity, getRarityConfig } from '../lib/rarity';
+import { colors, spacing, borderRadius, shadows } from '../lib/theme';
+import { useWalletAuthStore } from '../stores/walletAuth';
+import { buildPurchaseTransaction, sendPurchaseTransaction, PREMIUM_PACK_PRICE } from '../lib/solana/purchase';
+import { buildTransferTransaction, sendTransferTransaction } from '../lib/solana/transfer';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { RPC_URL } from '../lib/solana/constants';
 import type { PackStackParamList } from '../navigation/types';
 import type { Event, Outcome, UserPack, UserPick } from '../types';
 
-type NavProp = NativeStackNavigationProp<PackStackParamList, 'PackOpen'>;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-type Phase = 'loading' | 'drafting' | 'submitting' | 'error';
+type NavProp = NativeStackNavigationProp<PackStackParamList, 'PackOpen'>;
+type PackOpenRoute = RouteProp<PackStackParamList, 'PackOpen'>;
+
+type Phase =
+  | 'loading'
+  | 'checking'
+  | 'blocked'
+  | 'payment'
+  | 'confirming_tx'
+  | 'opening'
+  | 'dissolving'
+  | 'revealing'
+  | 'swiping'
+  | 'submitting'
+  | 'confirming'
+  | 'error';
 
 interface PickedEvent {
   event: Event;
   outcome: Outcome;
 }
 
+const CONFETTI_COLORS = ['#ffd700', '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7dc6f', '#a855f7'];
+
 export function PackOpenScreen() {
   const navigation = useNavigation<NavProp>();
+  const route = useRoute<PackOpenRoute>();
+  const isPremium = route.params?.premium === true;
+
   const [phase, setPhase] = useState<Phase>('loading');
   const [events, setEvents] = useState<Event[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pickedEvents, setPickedEvents] = useState<PickedEvent[]>([]);
+  const [revealedCards, setRevealedCards] = useState<number[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Premium pack state
+  const [paymentSignature, setPaymentSignature] = useState<string | null>(null);
+  const [buyerWallet, setBuyerWallet] = useState<string | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  const packIdRef = useRef<string>(uuidv4());
+  const packId = packIdRef.current;
+
   const { anonymousId, profileId } = useSessionStore();
+  const { walletAddress, status: walletStatus } = useWalletAuthStore();
+  const isWalletConnected = walletStatus === 'authenticated' && !!walletAddress;
   const setPack = useCurrentPackStore((s) => s.setPack);
   const completeDraft = useCurrentPackStore((s) => s.completeDraft);
   const addPack = useMyPacksStore((s) => s.addPack);
+
+  // Pack wobble animation
+  const wobbleAnim = useRef(new Animated.Value(0)).current;
+  const packScaleAnim = useRef(new Animated.Value(1)).current;
+
+  // Tap to open pulse
+  const tapPulseAnim = useRef(new Animated.Value(0.5)).current;
+
+  // Balatro-style idle: gentle breathing scale + subtle tilt
+  const breatheAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (phase === 'opening') {
+      // Gentle wobble (subtle, not frantic)
+      const wobble = Animated.loop(
+        Animated.sequence([
+          Animated.timing(wobbleAnim, {
+            toValue: -1.5, duration: 800,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+          Animated.timing(wobbleAnim, {
+            toValue: 1.5, duration: 800,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+        ])
+      );
+      wobble.start();
+
+      // Breathing scale (Balatro card idle)
+      const breathe = Animated.loop(
+        Animated.sequence([
+          Animated.timing(breatheAnim, {
+            toValue: 1.03, duration: 1200,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+          Animated.timing(breatheAnim, {
+            toValue: 0.97, duration: 1200,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+        ])
+      );
+      breathe.start();
+
+      // Tap text pulse
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(tapPulseAnim, {
+            toValue: 1, duration: 1000,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+          Animated.timing(tapPulseAnim, {
+            toValue: 0.3, duration: 1000,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+
+      return () => {
+        wobble.stop();
+        breathe.stop();
+        pulse.stop();
+      };
+    }
+  }, [phase, wobbleAnim, breatheAnim, tapPulseAnim]);
 
   // Load events on mount
   useEffect(() => {
@@ -55,7 +176,7 @@ export function PackOpenScreen() {
         }
 
         setEvents(evts);
-        setPhase('drafting');
+        setPhase('checking');
       } catch (err) {
         if (cancelled) return;
         console.error('Error loading events:', err);
@@ -68,20 +189,144 @@ export function PackOpenScreen() {
     return () => { cancelled = true; };
   }, []);
 
+  // Check availability
+  useEffect(() => {
+    if (phase !== 'checking') return;
+
+    // Premium packs skip weekly limit — go straight to payment
+    if (isPremium) {
+      setPhase('payment');
+      return;
+    }
+
+    async function check() {
+      try {
+        const status = await checkAvailability(anonymousId);
+        if (status.canOpenPack) {
+          setPhase('opening');
+        } else {
+          setPhase('blocked');
+        }
+      } catch {
+        // Local-first: allow opening if API fails
+        setPhase('opening');
+      }
+    }
+
+    check();
+  }, [phase, anonymousId, isPremium]);
+
+  // Prevent auto-tap from previous screen's touch propagation
+  const tapEnabledRef = useRef(false);
+  useEffect(() => {
+    if (phase === 'opening') {
+      tapEnabledRef.current = false;
+      const timer = setTimeout(() => { tapEnabledRef.current = true; }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      tapEnabledRef.current = false;
+    }
+  }, [phase]);
+
+  // Handle tap to open pack
+  const handleOpenPack = useCallback(() => {
+    if (phase !== 'opening' || !tapEnabledRef.current) return;
+
+    playSound('pack_open');
+
+    // Balatro-style satisfying open: squeeze → pop → explode
+    Animated.sequence([
+      // Squeeze down
+      Animated.timing(packScaleAnim, { toValue: 0.85, duration: 120, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      // Pop up big
+      Animated.spring(packScaleAnim, { toValue: 1.15, tension: 200, friction: 6, useNativeDriver: true }),
+      // Hold briefly
+      Animated.delay(100),
+      // Shrink and fade away
+      Animated.timing(packScaleAnim, { toValue: 0, duration: 250, easing: Easing.in(Easing.back(2)), useNativeDriver: true }),
+    ]).start(() => {
+      setPhase('dissolving');
+    });
+  }, [phase, packScaleAnim]);
+
+  // Handle premium pack payment
+  const handlePayment = useCallback(async () => {
+    if (!isWalletConnected || !walletAddress) return;
+
+    setPaymentLoading(true);
+    setPaymentError(null);
+
+    try {
+      const buyerPubkey = new PublicKey(walletAddress);
+      const connection = new Connection(RPC_URL, 'confirmed');
+
+      // Build the transaction (purchase via program)
+      const { transaction, blockhash, lastValidBlockHeight } =
+        await buildPurchaseTransaction(buyerPubkey, packId);
+
+      // TODO: Sign the transaction via Mobile Wallet Adapter
+      // For now, this is a placeholder — MWA integration requires transact() callback
+      // const signedTx = await signTransaction(transaction);
+      // const result = await sendPurchaseTransaction(signedTx, blockhash, lastValidBlockHeight);
+
+      // Simulated: in production, replace with actual MWA signing flow
+      const result = await sendPurchaseTransaction(transaction, blockhash, lastValidBlockHeight);
+
+      setPaymentSignature(result.signature);
+      setBuyerWallet(walletAddress);
+      setPhase('confirming_tx');
+      setPaymentLoading(false);
+
+      // Wait for on-chain confirmation
+      await connection.confirmTransaction(
+        {
+          signature: result.signature,
+          blockhash: result.blockhash,
+          lastValidBlockHeight: result.lastValidBlockHeight,
+        },
+        'confirmed'
+      );
+
+      playSound('pack_open');
+      setPhase('opening');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Payment failed';
+      console.error('[PREMIUM] Payment error:', msg);
+      setPaymentError(msg);
+      setPhase('payment');
+      setPaymentLoading(false);
+    }
+  }, [isWalletConnected, walletAddress, packId]);
+
+  // Reveal cards one by one
+  useEffect(() => {
+    if (phase === 'revealing' && revealedCards.length < events.length) {
+      const timer = setTimeout(() => {
+        playSound('card_deal');
+        setRevealedCards((prev) => [...prev, prev.length]);
+      }, 200);
+      return () => clearTimeout(timer);
+    } else if (phase === 'revealing' && revealedCards.length >= events.length) {
+      const timer = setTimeout(() => setPhase('swiping'), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [phase, revealedCards, events]);
+
   // Handle picking an outcome for the current event
   const handlePick = useCallback(
     (outcome: Outcome) => {
-      if (phase !== 'drafting' || currentIndex >= events.length) return;
+      if (phase !== 'swiping' || currentIndex >= events.length) return;
+
+      playSound('card_pick');
 
       const event = events[currentIndex];
       const newPicked = [...pickedEvents, { event, outcome }];
       setPickedEvents(newPicked);
 
       if (newPicked.length < events.length) {
-        // Advance to next card
         setCurrentIndex(currentIndex + 1);
       } else {
-        // All picks made, submit pack
+        // All picks made, submit
         submitPack(newPicked);
       }
     },
@@ -92,11 +337,9 @@ export function PackOpenScreen() {
   const submitPack = async (picks: PickedEvent[]) => {
     setPhase('submitting');
 
-    const packId = uuidv4();
     const now = new Date().toISOString();
     const effectiveProfileId = profileId || anonymousId;
 
-    // Build pick inputs
     const pickInputs = picks.map((pe, index) => {
       const prob =
         pe.outcome === 'a'
@@ -125,6 +368,7 @@ export function PackOpenScreen() {
     });
 
     // Create pack in database
+    const hasPremiumData = isPremium && paymentSignature && buyerWallet;
     const result = await createPackWithPicks(
       {
         id: packId,
@@ -132,16 +376,22 @@ export function PackOpenScreen() {
         anonymousId,
         packTypeSlug: 'sports',
         openedAt: now,
+        ...(hasPremiumData && {
+          isPremium: true,
+          paymentSignature,
+          paymentAmount: PREMIUM_PACK_PRICE / 1_000_000,
+          buyerWallet,
+        }),
       },
       pickInputs
     );
 
     if ('error' in result) {
       console.error('Failed to create pack:', result.error);
-      // Continue anyway with local state — pack will sync later
+      // Continue anyway — local-first
     }
 
-    // Build local UserPack and UserPick objects
+    // Build local objects
     const userPack: UserPack = {
       id: packId,
       user_id: effectiveProfileId,
@@ -153,6 +403,12 @@ export function PackOpenScreen() {
       correct_picks: 0,
       created_at: now,
       updated_at: now,
+      ...(hasPremiumData && {
+        is_premium: true,
+        payment_signature: paymentSignature,
+        payment_amount: PREMIUM_PACK_PRICE / 1_000_000,
+        buyer_wallet: buyerWallet,
+      }),
     };
 
     const userPicks: (UserPick & { event: Event })[] = pickInputs.map((pi, index) => ({
@@ -179,11 +435,31 @@ export function PackOpenScreen() {
     completeDraft(userPicks as UserPick[]);
     addPack(userPack, packEvents, userPicks);
 
-    // Navigate to reveal
-    navigation.replace('PackReveal', { packId });
+    // Show confirming celebration
+    setPhase('confirming');
   };
 
-  // Current event to display
+  // Calculate jackpot potential
+  const jackpotData = useMemo(() => {
+    if (pickedEvents.length !== events.length || events.length === 0) return null;
+
+    const picks = pickedEvents.map(({ event, outcome }) => ({
+      probabilityAtPick:
+        outcome === 'a'
+          ? event.outcome_a_probability
+          : outcome === 'b'
+            ? event.outcome_b_probability
+            : event.outcome_draw_probability ?? 0,
+    }));
+    const maxPoints = calculateMaxPotentialPoints(picks);
+    const combinedProb = calculateCombinedProbability(picks);
+    return { maxPoints, combinedProb };
+  }, [pickedEvents, events]);
+
+  const handleLetsGo = useCallback(() => {
+    navigation.replace('PackReveal', { packId });
+  }, [navigation, packId]);
+
   const currentEvent = events[currentIndex];
 
   return (
@@ -197,6 +473,43 @@ export function PackOpenScreen() {
               <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.loadingText}>
                 Loading events...
               </PixelText>
+            </View>
+          )}
+
+          {/* Checking */}
+          {phase === 'checking' && (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={colors.game.gold} />
+              <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.loadingText}>
+                Checking availability...
+              </PixelText>
+            </View>
+          )}
+
+          {/* Blocked */}
+          {phase === 'blocked' && (
+            <View style={styles.centered}>
+              <PixelText variant="body" size="4xl" style={styles.blockedEmoji}>
+                {'\u23F3'}
+              </PixelText>
+              <PixelText variant="heading" size="xl" style={styles.blockedTitle}>
+                Weekly Limit Reached
+              </PixelText>
+              <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.blockedText}>
+                You've opened all your free packs this week.{'\n'}Come back next Monday for more!
+              </PixelText>
+              <View style={styles.blockedButtons}>
+                <PixelButton
+                  title="Back to Home"
+                  variant="primary"
+                  onPress={() => navigation.getParent()?.navigate('MainTabs', { screen: 'Game' })}
+                />
+                <PixelButton
+                  title="View My Packs"
+                  variant="secondary"
+                  onPress={() => navigation.getParent()?.navigate('MainTabs', { screen: 'MyPacks' })}
+                />
+              </View>
             </View>
           )}
 
@@ -215,14 +528,14 @@ export function PackOpenScreen() {
                   setEvents([]);
                   setCurrentIndex(0);
                   setPickedEvents([]);
-                  // Re-trigger load
+                  setRevealedCards([]);
                   getEventsForPack('sports', 5).then((evts) => {
                     if (evts.length < 5) {
                       setErrorMessage('Not enough events available.');
                       setPhase('error');
                     } else {
                       setEvents(evts);
-                      setPhase('drafting');
+                      setPhase('checking');
                     }
                   }).catch(() => {
                     setErrorMessage('Failed to load events.');
@@ -233,8 +546,139 @@ export function PackOpenScreen() {
             </View>
           )}
 
-          {/* Drafting */}
-          {phase === 'drafting' && currentEvent && (
+          {/* Payment — Premium Packs */}
+          {phase === 'payment' && (
+            <View style={styles.centered}>
+              <PackSprite size="lg" premium glowing />
+
+              <PixelText variant="heading" size="xl" color={colors.game.gold} style={styles.paymentTitle}>
+                PREMIUM PACK
+              </PixelText>
+              <PixelText variant="body" size="lg" color={colors.game.gold} style={styles.paymentPrice}>
+                100 PLAY
+              </PixelText>
+
+              {paymentError && (
+                <View style={styles.paymentErrorBox}>
+                  <PixelText variant="body" size="sm" color={colors.game.failure} style={styles.paymentErrorText}>
+                    {paymentError}
+                  </PixelText>
+                </View>
+              )}
+
+              <View style={styles.paymentButtons}>
+                {!isWalletConnected ? (
+                  <PixelButton
+                    title="CONNECT WALLET"
+                    variant="secondary"
+                    onPress={() => {
+                      // TODO: Integrate Mobile Wallet Adapter connection flow
+                      console.log('[PREMIUM] Wallet connection not yet implemented on mobile');
+                    }}
+                    style={styles.paymentButton}
+                  />
+                ) : (
+                  <PixelButton
+                    title={paymentLoading ? 'PROCESSING...' : 'PAY & OPEN'}
+                    variant="primary"
+                    onPress={handlePayment}
+                    disabled={paymentLoading}
+                    style={styles.paymentButton}
+                  />
+                )}
+
+                <PixelButton
+                  title="Back"
+                  variant="secondary"
+                  onPress={() => navigation.getParent()?.navigate('MainTabs', { screen: 'Game' })}
+                  style={styles.paymentButton}
+                />
+              </View>
+
+              {isWalletConnected && (
+                <PixelText variant="body" size="xs" color={colors.textMuted} style={styles.walletLabel}>
+                  {walletAddress!.slice(0, 8)}...{walletAddress!.slice(-4)}
+                </PixelText>
+              )}
+            </View>
+          )}
+
+          {/* Confirming Transaction */}
+          {phase === 'confirming_tx' && (
+            <View style={styles.centered}>
+              <PackSprite size="lg" premium />
+              <ActivityIndicator size="large" color={colors.game.gold} style={styles.txSpinner} />
+              <PixelText variant="heading" size="lg" color={colors.game.gold} style={styles.txTitle}>
+                Confirming transaction...
+              </PixelText>
+              {paymentSignature && (
+                <PixelText variant="body" size="xs" color={colors.textMuted} style={styles.txSig}>
+                  {paymentSignature.slice(0, 8)}...{paymentSignature.slice(-8)}
+                </PixelText>
+              )}
+            </View>
+          )}
+
+          {/* Opening — Tap to Open Pack (Balatro style) */}
+          {phase === 'opening' && (
+            <View style={styles.centered}>
+              <Pressable onPress={handleOpenPack}>
+                <Animated.View
+                  style={{
+                    transform: [
+                      { rotate: wobbleAnim.interpolate({ inputRange: [-1.5, 1.5], outputRange: ['-1.5deg', '1.5deg'] }) },
+                      { scale: Animated.multiply(packScaleAnim, breatheAnim) },
+                    ],
+                  }}
+                >
+                  <PackSprite size="xl" premium={isPremium} />
+                </Animated.View>
+              </Pressable>
+              <Animated.View style={{ opacity: tapPulseAnim, marginTop: spacing[8] }}>
+                <PixelText variant="heading" size="lg" color={colors.foreground}>
+                  Tap to Open
+                </PixelText>
+              </Animated.View>
+            </View>
+          )}
+
+          {/* Dissolving — Pack burst particles */}
+          {phase === 'dissolving' && (
+            <View style={styles.centered}>
+              <PackBurst onComplete={() => setPhase('revealing')} />
+            </View>
+          )}
+
+          {/* Revealing — Cards fan out one by one */}
+          {phase === 'revealing' && (
+            <View style={styles.centered}>
+              <View style={styles.revealGrid}>
+                {events.map((event, index) => {
+                  const rarity =
+                    event.rarityInfo?.rarity ??
+                    getEventRarity(event.outcome_a_probability, event.outcome_b_probability);
+                  const rarityConfig = getRarityConfig(rarity);
+                  const isRevealed = revealedCards.includes(index);
+
+                  return (
+                    <RevealMiniCard
+                      key={event.id}
+                      revealed={isRevealed}
+                      borderColor={rarityConfig.hex}
+                      subcategory={event.subcategory}
+                      showGlow={rarity === 'rare' || rarity === 'epic' || rarity === 'legendary'}
+                    />
+                  );
+                })}
+              </View>
+              <PixelText variant="body" size="lg" style={styles.revealCount}>
+                {revealedCards.length} / {events.length} cards
+              </PixelText>
+            </View>
+          )}
+
+          {/* Swiping — Make Your Picks */}
+          {phase === 'swiping' && currentEvent && (
             <View style={styles.draftContainer}>
               {/* Header */}
               <View style={styles.headerSection}>
@@ -254,12 +698,50 @@ export function PackOpenScreen() {
               {/* Draft Card */}
               <View style={styles.cardSection}>
                 <DraftPicker
+                  key={currentEvent.id}
                   event={currentEvent}
                   position={currentIndex + 1}
                   total={events.length}
                   onPick={handlePick}
                 />
               </View>
+
+              {/* Picked summary strip */}
+              {pickedEvents.length > 0 && (
+                <View style={styles.pickedStrip}>
+                  {pickedEvents.map(({ event, outcome }) => {
+                    const rarity =
+                      event.rarityInfo?.rarity ??
+                      getEventRarity(event.outcome_a_probability, event.outcome_b_probability);
+                    const rarityConfig = getRarityConfig(rarity);
+                    const label =
+                      outcome === 'a'
+                        ? event.outcome_a_label
+                        : outcome === 'b'
+                          ? event.outcome_b_label
+                          : event.outcome_draw_label || 'Draw';
+                    const chipColor =
+                      outcome === 'a' ? '#3b82f6' : outcome === 'b' ? '#ef4444' : colors.game.gold;
+
+                    return (
+                      <View
+                        key={event.id}
+                        style={[
+                          styles.pickedChip,
+                          {
+                            borderColor: rarityConfig.hex,
+                            backgroundColor: chipColor + '30',
+                          },
+                        ]}
+                      >
+                        <PixelText variant="body" size="xs" color={chipColor}>
+                          {label.slice(0, 3).toUpperCase()}
+                        </PixelText>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
           )}
 
@@ -272,11 +754,268 @@ export function PackOpenScreen() {
               </PixelText>
             </View>
           )}
+
+          {/* Confirming — Celebration */}
+          {phase === 'confirming' && jackpotData && (
+            <View style={styles.centered}>
+              {/* Confetti */}
+              <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                {CONFETTI_COLORS.map((color, i) =>
+                  Array.from({ length: 5 }, (_, j) => (
+                    <ConfettiParticle
+                      key={`${i}-${j}`}
+                      color={color}
+                      startX={Math.random() * SCREEN_WIDTH}
+                      delay={Math.random() * 1000}
+                    />
+                  ))
+                )}
+              </View>
+
+              {/* Emoji */}
+              <PixelText variant="body" size="4xl" style={styles.confirmEmoji}>
+                {'\u{1F3B0}'}
+              </PixelText>
+
+              {/* Header */}
+              <PixelText variant="heading" size="xl" color={colors.game.gold} style={styles.confirmTitle}>
+                PICKS LOCKED IN!
+              </PixelText>
+
+              {/* Jackpot Card */}
+              <View style={styles.jackpotCard}>
+                <PixelText variant="heading" size="xs" color={colors.game.gold} uppercase style={styles.jackpotLabel}>
+                  POTENTIAL JACKPOT
+                </PixelText>
+                <PixelText variant="heading" size="2xl" style={styles.jackpotAmount}>
+                  ${jackpotData.maxPoints.totalPoints.toFixed(2)} USD
+                </PixelText>
+                <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.jackpotSub}>
+                  If you nail all 5 picks!
+                </PixelText>
+                <PixelText variant="body" size="lg" color={colors.game.gold}>
+                  {'\u{1F3B2}'} {formatProbability(jackpotData.combinedProb)} chance
+                </PixelText>
+              </View>
+
+              {/* Mini pick chips */}
+              <View style={styles.confirmChips}>
+                {pickedEvents.map(({ event, outcome }) => {
+                  const prob =
+                    outcome === 'a'
+                      ? event.outcome_a_probability
+                      : outcome === 'b'
+                        ? event.outcome_b_probability
+                        : event.outcome_draw_probability ?? 0;
+                  const label =
+                    outcome === 'a'
+                      ? event.outcome_a_label
+                      : outcome === 'b'
+                        ? event.outcome_b_label
+                        : event.outcome_draw_label || 'Draw';
+                  const rarity =
+                    event.rarityInfo?.rarity ??
+                    getEventRarity(event.outcome_a_probability, event.outcome_b_probability);
+                  const rarityConfig = getRarityConfig(rarity);
+
+                  return (
+                    <View
+                      key={event.id}
+                      style={[styles.confirmChip, { borderColor: rarityConfig.hex }]}
+                    >
+                      <PixelText variant="body" size="sm">
+                        {label.slice(0, 3).toUpperCase()}
+                      </PixelText>
+                      <PixelText variant="body" size="xs" color={colors.textMuted}>
+                        {formatProbability(prob)}
+                      </PixelText>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* CTA */}
+              <PixelButton
+                title="LET'S GO!"
+                variant="primary"
+                onPress={handleLetsGo}
+                style={styles.letsGoButton}
+              />
+            </View>
+          )}
         </View>
       </ScreenContainer>
     </GestureHandlerRootView>
   );
 }
+
+// ===== Mini card for revealing phase =====
+
+function RevealMiniCard({
+  revealed,
+  borderColor,
+  subcategory,
+  showGlow,
+}: {
+  revealed: boolean;
+  borderColor: string;
+  subcategory?: string;
+  showGlow: boolean;
+}) {
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(-180)).current;
+
+  useEffect(() => {
+    if (revealed) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, { toValue: 1, stiffness: 400, damping: 25, useNativeDriver: true }),
+        Animated.spring(rotateAnim, { toValue: 0, stiffness: 400, damping: 25, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [revealed, scaleAnim, rotateAnim]);
+
+  const sub = (subcategory ?? '').toLowerCase();
+  const emoji =
+    sub === 'nba' ? '\u{1F3C0}' :
+    sub === 'nfl' ? '\u{1F3C8}' :
+    sub === 'epl' || sub === 'laliga' || sub === 'ucl' || sub === 'soccer' ? '\u26BD' :
+    sub === 'f1' ? '\u{1F3CE}\uFE0F' :
+    sub === 'mlb' ? '\u26BE' :
+    sub === 'tennis' ? '\u{1F3BE}' :
+    '\u{1F3AF}';
+
+  return (
+    <Animated.View
+      style={[
+        styles.miniCard,
+        {
+          borderColor,
+          transform: [
+            { scale: scaleAnim },
+            {
+              rotate: rotateAnim.interpolate({
+                inputRange: [-180, 0],
+                outputRange: ['-180deg', '0deg'],
+              }),
+            },
+          ],
+          ...(showGlow && {
+            shadowColor: borderColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowRadius: 12,
+            shadowOpacity: 0.6,
+          }),
+        },
+      ]}
+    >
+      <PixelText variant="body" size="xl">
+        {emoji}
+      </PixelText>
+    </Animated.View>
+  );
+}
+
+// ===== Confetti Particle =====
+
+function ConfettiParticle({
+  color,
+  startX,
+  delay,
+}: {
+  color: string;
+  startX: number;
+  delay: number;
+}) {
+  const translateY = useRef(new Animated.Value(-20)).current;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const drift = (Math.random() - 0.5) * 200;
+    const duration = 2500 + Math.random() * 1500;
+
+    const animation = Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(translateY, {
+            toValue: SCREEN_HEIGHT + 100,
+            duration,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(translateX, {
+            toValue: drift,
+            duration,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: duration * 0.5,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0,
+            duration: duration * 0.3,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(rotate, {
+            toValue: Math.random() > 0.5 ? 360 : -360,
+            duration,
+            useNativeDriver: true,
+          }),
+        ]),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [delay, translateY, translateX, opacity, rotate]);
+
+  const isCircle = Math.random() > 0.5;
+  const size = 6 + Math.random() * 6;
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        left: startX,
+        top: -20,
+        width: size,
+        height: isCircle ? size : size * 1.5,
+        borderRadius: isCircle ? size / 2 : 2,
+        backgroundColor: color,
+        opacity,
+        transform: [
+          { translateY },
+          { translateX },
+          {
+            rotate: rotate.interpolate({
+              inputRange: [-360, 360],
+              outputRange: ['-360deg', '360deg'],
+            }),
+          },
+        ],
+      }}
+    />
+  );
+}
+
+// ===== Styles =====
 
 const styles = StyleSheet.create({
   gestureRoot: {
@@ -298,6 +1037,85 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing[4],
   },
+  // Blocked
+  blockedEmoji: {
+    marginBottom: spacing[4],
+  },
+  blockedTitle: {
+    marginBottom: spacing[4],
+  },
+  blockedText: {
+    textAlign: 'center',
+    marginBottom: spacing[6],
+  },
+  blockedButtons: {
+    gap: spacing[3],
+    width: '100%',
+    maxWidth: 300,
+  },
+  // Payment
+  paymentTitle: {
+    marginTop: spacing[6],
+    marginBottom: spacing[2],
+  },
+  paymentPrice: {
+    marginBottom: spacing[6],
+  },
+  paymentErrorBox: {
+    width: '100%',
+    maxWidth: 340,
+    marginBottom: spacing[4],
+    padding: spacing[3],
+    borderRadius: borderRadius.lg,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  paymentErrorText: {
+    textAlign: 'center',
+  },
+  paymentButtons: {
+    gap: spacing[3],
+    width: '100%',
+    maxWidth: 340,
+  },
+  paymentButton: {
+    width: '100%',
+  },
+  walletLabel: {
+    marginTop: spacing[3],
+  },
+  // Confirming Tx
+  txSpinner: {
+    marginTop: spacing[6],
+  },
+  txTitle: {
+    marginTop: spacing[4],
+  },
+  txSig: {
+    marginTop: spacing[2],
+  },
+  // Revealing
+  revealGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing[3],
+    maxWidth: 300,
+  },
+  miniCard: {
+    width: 56,
+    height: 80,
+    backgroundColor: colors.game.primary,
+    borderWidth: 2,
+    borderRadius: borderRadius.lg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  revealCount: {
+    marginTop: spacing[6],
+  },
+  // Swiping
   draftContainer: {
     flex: 1,
     paddingHorizontal: spacing[4],
@@ -315,5 +1133,65 @@ const styles = StyleSheet.create({
   },
   cardSection: {
     flex: 1,
+  },
+  pickedStrip: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[1],
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  pickedChip: {
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+  },
+  // Confirming
+  confirmEmoji: {
+    marginBottom: spacing[4],
+  },
+  confirmTitle: {
+    marginBottom: spacing[6],
+  },
+  jackpotCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: 'rgba(180, 134, 11, 0.15)',
+    borderWidth: 2,
+    borderColor: colors.game.gold,
+    borderRadius: borderRadius.xl,
+    padding: spacing[5],
+    alignItems: 'center',
+    marginBottom: spacing[6],
+  },
+  jackpotLabel: {
+    marginBottom: spacing[3],
+    letterSpacing: 3,
+  },
+  jackpotAmount: {
+    marginBottom: spacing[2],
+  },
+  jackpotSub: {
+    marginBottom: spacing[2],
+  },
+  confirmChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing[2],
+    marginBottom: spacing[8],
+  },
+  confirmChip: {
+    alignItems: 'center',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    backgroundColor: 'rgba(107, 114, 128, 0.15)',
+  },
+  letsGoButton: {
+    minWidth: 200,
   },
 });

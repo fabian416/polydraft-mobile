@@ -17,7 +17,7 @@ export const colors = {
     accent: '#e94560',
     gold: '#ffd700',
     success: '#4ade80',
-    failure: '#6b7280',
+    failure: '#ef4444',
     warning: '#fbbf24',
   },
 

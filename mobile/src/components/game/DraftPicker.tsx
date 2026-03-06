@@ -1,33 +1,38 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { View, Image, StyleSheet, Dimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withRepeat,
+  Easing,
   runOnJS,
   interpolate,
   Extrapolation,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { PixelText } from '../common';
+import { haptic } from '../../lib/haptics';
 import { colors, spacing, borderRadius, shadows } from '../../lib/theme';
 import { formatProbability, getTier, getTierColor } from '../../lib/scoring/calculator';
 import { getEventRarity, getRarityConfig } from '../../lib/rarity';
 import type { Event, Outcome } from '../../types';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const SWIPE_X_THRESHOLD = 100;
-const SWIPE_Y_THRESHOLD = 100;
+const SWIPE_X_THRESHOLD = 80;
+const SWIPE_Y_THRESHOLD = 80;
+const VELOCITY_THRESHOLD = 500;
 const EXIT_X = 500;
 const EXIT_Y = 500;
-const MAX_ROTATION = 25;
+const MAX_ROTATION = 20;
 const OVERLAY_ROTATION = 12;
 const EXIT_DURATION = 200;
 
 const COLOR_A = '#3b82f6';
 const COLOR_B = '#ef4444';
+const COLOR_DRAW = '#ffd700';
 
 const SUBCATEGORY_EMOJI: Record<string, string> = {
   nba: '\u{1F3C0}',
@@ -41,6 +46,10 @@ const SUBCATEGORY_EMOJI: Record<string, string> = {
   tennis: '\u{1F3BE}',
 };
 const DEFAULT_EMOJI = '\u{1F3AF}';
+
+// Card dimensions - take up most of the screen
+const CARD_WIDTH = SCREEN_WIDTH - spacing[6] * 2;
+const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 interface DraftPickerProps {
   event: Event;
@@ -64,17 +73,37 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
   const subcategory = (event.subcategory ?? '').toLowerCase();
   const emoji = SUBCATEGORY_EMOJI[subcategory] ?? DEFAULT_EMOJI;
 
-  const tierA = getTier(event.outcome_a_probability);
-  const tierB = getTier(event.outcome_b_probability);
-  const colorA = getTierColor(tierA);
-  const colorB = getTierColor(tierB);
-
   const triggerPick = useCallback(
     (outcome: Outcome) => {
+      haptic('heavy');
       onPick(outcome);
     },
     [onPick],
   );
+
+  // Foil / Holo shimmer for rare+ cards
+  const hasShimmer = rarity === 'rare' || rarity === 'epic' || rarity === 'legendary';
+  const isHolo = rarity === 'legendary';
+  const shimmerX = useSharedValue(-SCREEN_WIDTH);
+
+  useEffect(() => {
+    if (!hasShimmer) return;
+    const duration = isHolo ? 2500 : 3500;
+    shimmerX.value = -SCREEN_WIDTH;
+    shimmerX.value = withRepeat(
+      withTiming(SCREEN_WIDTH, { duration, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [hasShimmer, isHolo]);
+
+  const foilShimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmerX.value }],
+  }));
+
+  const holoShimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmerX.value }],
+  }));
 
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
@@ -86,10 +115,15 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
       if (isExiting.value) return;
 
       const absX = Math.abs(e.translationX);
-      const absY = e.translationY; // positive = down
+      const absY = e.translationY;
+      const velX = Math.abs(e.velocityX);
+      const velY = Math.abs(e.velocityY);
 
-      // Check draw first (swipe down)
-      if (event.supports_draw && absY > SWIPE_Y_THRESHOLD && absX < SWIPE_X_THRESHOLD) {
+      const passedX = absX > SWIPE_X_THRESHOLD || velX > VELOCITY_THRESHOLD;
+      const passedY = absY > SWIPE_Y_THRESHOLD || velY > VELOCITY_THRESHOLD;
+
+      // Draw (swipe down)
+      if (event.supports_draw && e.translationY > 0 && passedY && absX < SWIPE_X_THRESHOLD) {
         isExiting.value = true;
         translateY.value = withTiming(EXIT_Y, { duration: EXIT_DURATION });
         cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
@@ -97,22 +131,23 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
         return;
       }
 
-      // Swipe right -> outcome A
-      if (e.translationX > SWIPE_X_THRESHOLD) {
-        isExiting.value = true;
-        translateX.value = withTiming(EXIT_X, { duration: EXIT_DURATION });
-        cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
-        runOnJS(triggerPick)('a');
-        return;
-      }
-
-      // Swipe left -> outcome B
-      if (e.translationX < -SWIPE_X_THRESHOLD) {
-        isExiting.value = true;
-        translateX.value = withTiming(-EXIT_X, { duration: EXIT_DURATION });
-        cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
-        runOnJS(triggerPick)('b');
-        return;
+      // Horizontal swipe
+      if (absX > Math.abs(e.translationY)) {
+        if (passedX) {
+          isExiting.value = true;
+          if (e.translationX < 0) {
+            // Swipe left -> outcome A (left team)
+            translateX.value = withTiming(-EXIT_X, { duration: EXIT_DURATION });
+            cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
+            runOnJS(triggerPick)('a');
+          } else {
+            // Swipe right -> outcome B (right team)
+            translateX.value = withTiming(EXIT_X, { duration: EXIT_DURATION });
+            cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
+            runOnJS(triggerPick)('b');
+          }
+          return;
+        }
       }
 
       // Spring back
@@ -138,19 +173,8 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
     };
   });
 
-  // Overlay A (right swipe = blue)
+  // Overlay A (swipe left = picks A)
   const overlayAStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      translateX.value,
-      [0, SWIPE_X_THRESHOLD],
-      [0, 1],
-      Extrapolation.CLAMP,
-    );
-    return { opacity };
-  });
-
-  // Overlay B (left swipe = red)
-  const overlayBStyle = useAnimatedStyle(() => {
     const opacity = interpolate(
       translateX.value,
       [0, -SWIPE_X_THRESHOLD],
@@ -160,7 +184,18 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
     return { opacity };
   });
 
-  // Overlay Draw (down swipe)
+  // Overlay B (swipe right = picks B)
+  const overlayBStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [0, SWIPE_X_THRESHOLD],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return { opacity };
+  });
+
+  // Overlay Draw (swipe down)
   const overlayDrawStyle = useAnimatedStyle(() => {
     if (!event.supports_draw) return { opacity: 0 };
     const opacity = interpolate(
@@ -174,39 +209,12 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
 
   return (
     <View style={styles.container}>
-      {/* Swipe hint labels behind the card */}
-      <View style={styles.hintsContainer}>
-        <View style={styles.hintLeft}>
-          <PixelText variant="body" size="lg" color={COLOR_B}>
-            {'\u2190 '}{event.outcome_b_label}
-          </PixelText>
-        </View>
-        <View style={styles.hintRight}>
-          <PixelText variant="body" size="lg" color={COLOR_A}>
-            {event.outcome_a_label}{' \u2192'}
-          </PixelText>
-        </View>
-      </View>
-
-      {event.supports_draw && (
-        <View style={styles.hintBottom}>
-          <PixelText variant="body" size="lg" color={colors.game.gold}>
-            {'\u2193 '}{event.outcome_draw_label || 'Draw'}
-          </PixelText>
-        </View>
-      )}
-
       <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.card, cardAnimatedStyle]}>
+        <Animated.View style={[styles.card, { borderColor: rarityConfig.hex + '80' }, cardAnimatedStyle]}>
           {/* ===== Overlays ===== */}
           <Animated.View style={[styles.overlay, styles.overlayA, overlayAStyle]}>
             <View style={styles.overlayLabelContainer}>
-              <PixelText
-                variant="heading"
-                size="2xl"
-                color={colors.white}
-                style={styles.overlayLabelA}
-              >
+              <PixelText variant="heading" size="2xl" color={colors.white} style={styles.overlayLabelA}>
                 {event.outcome_a_label}
               </PixelText>
             </View>
@@ -214,12 +222,7 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
 
           <Animated.View style={[styles.overlay, styles.overlayB, overlayBStyle]}>
             <View style={styles.overlayLabelContainer}>
-              <PixelText
-                variant="heading"
-                size="2xl"
-                color={colors.white}
-                style={styles.overlayLabelB}
-              >
+              <PixelText variant="heading" size="2xl" color={colors.white} style={styles.overlayLabelB}>
                 {event.outcome_b_label}
               </PixelText>
             </View>
@@ -233,6 +236,23 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
                 </PixelText>
               </View>
             </Animated.View>
+          )}
+
+          {/* ===== Shimmer ===== */}
+          {hasShimmer && !isHolo && (
+            <View style={styles.shimmerContainer} pointerEvents="none">
+              <Animated.View style={[styles.foilBand, foilShimmerStyle]} />
+            </View>
+          )}
+          {hasShimmer && isHolo && (
+            <View style={styles.shimmerContainer} pointerEvents="none">
+              <Animated.View style={[styles.holoBands, holoShimmerStyle]}>
+                <View style={[styles.holoBand, { backgroundColor: 'rgba(255, 215, 0, 0.18)' }]} />
+                <View style={[styles.holoBand, { backgroundColor: 'rgba(59, 130, 246, 0.16)' }]} />
+                <View style={[styles.holoBand, { backgroundColor: 'rgba(168, 85, 247, 0.16)' }]} />
+                <View style={[styles.holoBand, { backgroundColor: 'rgba(34, 197, 94, 0.15)' }]} />
+              </Animated.View>
+            </View>
           )}
 
           {/* ===== Image Area ===== */}
@@ -272,87 +292,52 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
                 </PixelText>
               )}
             </View>
-
-            {/* Gradient overlay at bottom of image */}
-            <View style={styles.imageGradient} />
           </View>
 
-          {/* ===== Info Section ===== */}
+          {/* ===== Info Section (inside card) ===== */}
           <View style={styles.infoSection}>
-            {/* Title */}
-            <PixelText
-              variant="body"
-              size="xl"
-              style={styles.title}
-              numberOfLines={2}
-            >
+            <PixelText variant="body" size="xl" style={styles.title} numberOfLines={2}>
               {isVsMatch
                 ? `${event.outcome_a_label} vs ${event.outcome_b_label}`
                 : event.title}
             </PixelText>
 
-            {/* Outcomes row */}
+            {/* Probabilities row */}
             <View style={styles.outcomesRow}>
               <View style={styles.outcomeItem}>
-                <PixelText
-                  variant="body"
-                  size="xl"
-                  color={COLOR_B}
-                  numberOfLines={1}
-                  style={styles.outcomeLabel}
-                >
-                  {event.outcome_b_label}
-                </PixelText>
-                <PixelText variant="body" size="lg" color={colorB}>
-                  {formatProbability(event.outcome_b_probability)}
-                </PixelText>
-              </View>
-
-              <PixelText variant="heading" size="base" color={colors.textMuted}>
-                VS
-              </PixelText>
-
-              <View style={styles.outcomeItem}>
-                <PixelText
-                  variant="body"
-                  size="xl"
-                  color={COLOR_A}
-                  numberOfLines={1}
-                  style={styles.outcomeLabel}
-                >
-                  {event.outcome_a_label}
-                </PixelText>
-                <PixelText variant="body" size="lg" color={colorA}>
+                <PixelText variant="body" size="xl" color={COLOR_A} numberOfLines={1}>
                   {formatProbability(event.outcome_a_probability)}
                 </PixelText>
               </View>
-            </View>
-
-            {/* Draw info */}
-            {event.supports_draw && event.outcome_draw_probability != null && (
-              <PixelText
-                variant="body"
-                size="lg"
-                color={colors.game.gold}
-                style={styles.drawText}
-              >
-                {event.outcome_draw_label || 'Draw'}:{' '}
-                {formatProbability(event.outcome_draw_probability)} {'\u2193'}
-              </PixelText>
-            )}
-
-            {/* Swipe direction hints */}
-            <View style={styles.swipeHintsRow}>
-              <PixelText variant="body" size="base" color={COLOR_B}>
-                {'\u2190 '}{event.outcome_b_label}
-              </PixelText>
-              <PixelText variant="body" size="base" color={COLOR_A}>
-                {event.outcome_a_label}{' \u2192'}
-              </PixelText>
+              {event.supports_draw && event.outcome_draw_probability != null && (
+                <PixelText variant="body" size="lg" color={COLOR_DRAW}>
+                  {formatProbability(event.outcome_draw_probability)}
+                </PixelText>
+              )}
+              <View style={styles.outcomeItem}>
+                <PixelText variant="body" size="xl" color={COLOR_B} numberOfLines={1}>
+                  {formatProbability(event.outcome_b_probability)}
+                </PixelText>
+              </View>
             </View>
           </View>
         </Animated.View>
       </GestureDetector>
+
+      {/* Swipe hints OUTSIDE the card, below it */}
+      <View style={styles.swipeHintsRow}>
+        <PixelText variant="body" size="lg" color={COLOR_A}>
+          {'\u2190 '}{event.outcome_a_label}
+        </PixelText>
+        {event.supports_draw && (
+          <PixelText variant="body" size="lg" color={COLOR_DRAW}>
+            {'\u2193 '}{event.outcome_draw_label || 'Draw'}
+          </PixelText>
+        )}
+        <PixelText variant="body" size="lg" color={COLOR_B}>
+          {event.outcome_b_label}{' \u2192'}
+        </PixelText>
+      </View>
     </View>
   );
 }
@@ -364,35 +349,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Background hints
-  hintsContainer: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-  },
-  hintLeft: {
-    alignItems: 'flex-start',
-  },
-  hintRight: {
-    alignItems: 'flex-end',
-  },
-  hintBottom: {
-    position: 'absolute',
-    bottom: spacing[8],
-    alignSelf: 'center',
-  },
-
-  // Card
+  // Card - fills most of the screen
   card: {
-    width: SCREEN_WIDTH - spacing[8],
-    backgroundColor: colors.card.bg,
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    backgroundColor: '#151528',
     borderRadius: borderRadius.xl,
     borderWidth: 2,
     borderColor: colors.card.border,
     overflow: 'hidden',
-    ...shadows.pixel,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 12,
   },
 
   // Overlays
@@ -417,15 +387,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   overlayLabelA: {
-    transform: [{ rotate: `${OVERLAY_ROTATION}deg` }],
-  },
-  overlayLabelB: {
     transform: [{ rotate: `${-OVERLAY_ROTATION}deg` }],
   },
+  overlayLabelB: {
+    transform: [{ rotate: `${OVERLAY_ROTATION}deg` }],
+  },
 
-  // Image area
+  // Shimmer
+  shimmerContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+    overflow: 'hidden',
+    borderRadius: borderRadius.xl,
+  },
+  foilBand: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.13)',
+  },
+  holoBands: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    width: 80,
+  },
+  holoBand: {
+    width: 20,
+    height: '100%',
+  },
+
+  // Image area - takes more vertical space
   imageArea: {
-    height: 200,
+    flex: 1,
     backgroundColor: colors.game.secondary,
     justifyContent: 'center',
     alignItems: 'center',
@@ -473,51 +469,38 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   emojiText: {
-    fontSize: 80,
-    lineHeight: 96,
+    fontSize: 100,
+    lineHeight: 120,
     textAlign: 'center',
-  },
-  imageGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-    // Simulated gradient using layered semi-transparent backgrounds
-    backgroundColor: colors.card.bg,
-    opacity: 0.7,
   },
 
   // Info section
   infoSection: {
     padding: spacing[4],
+    paddingTop: spacing[3],
+    backgroundColor: '#151528',
   },
   title: {
     textAlign: 'center',
-    marginBottom: spacing[4],
+    marginBottom: spacing[3],
   },
   outcomesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing[3],
-    marginBottom: spacing[3],
+    marginBottom: spacing[2],
   },
   outcomeItem: {
     flex: 1,
     alignItems: 'center',
   },
-  outcomeLabel: {
-    marginBottom: spacing[1],
-    textAlign: 'center',
-  },
-  drawText: {
-    textAlign: 'center',
-    marginBottom: spacing[3],
-  },
   swipeHintsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing[2],
+    paddingTop: spacing[3],
+    width: '100%',
   },
 });

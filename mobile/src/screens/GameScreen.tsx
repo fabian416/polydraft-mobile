@@ -6,6 +6,7 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { ScreenContainer } from '../components/layout/ScreenContainer';
 import { Header } from '../components/layout/Header';
+import { GameBackground } from '../components/game/GameBackground';
 import { PixelText, PixelButton, PixelCard } from '../components/common';
 import { PackSprite } from '../components/game/PackSprite';
 import { WeeklyStats } from '../components/game/WeeklyStats';
@@ -88,9 +89,6 @@ export function GameScreen() {
   const activePacks = packSummaries.filter((p) => p.status !== 'completed');
   const previewPacks = activePacks.slice(0, 3);
 
-  const weeklyPoints = profile?.total_points ?? 0;
-  const weeklyRank = profile?.best_weekly_rank ?? '-';
-
   const handleOpenFreePack = useCallback(() => {
     if (packsRemaining > 0) {
       navigation.navigate('PackFlow', { screen: 'PackOpen' });
@@ -107,6 +105,7 @@ export function GameScreen() {
 
   return (
     <ScreenContainer>
+      <GameBackground />
       <Header />
       <ScrollView
         style={styles.scrollView}
@@ -115,12 +114,9 @@ export function GameScreen() {
       >
         {/* Weekly Stats */}
         <WeeklyStats
-          totalPoints={weeklyPoints}
           packsOpened={profile?.total_packs_opened ?? 0}
           correctPicks={profile?.total_correct_picks ?? 0}
-          totalPicks={profile?.total_picks_made ?? 0}
           currentStreak={profile?.current_streak ?? 0}
-          weeklyRank={weeklyRank}
         />
 
         {/* Pack Display */}
@@ -144,29 +140,31 @@ export function GameScreen() {
                   {packsRemaining >= 2 ? (
                     <View style={styles.stackedPacks}>
                       <View style={styles.backPack}>
-                        <PackSprite size="md" glowing={false} />
+                        <PackSprite size="lg" />
                       </View>
                       <View style={styles.frontPack}>
-                        <PackSprite size="md" glowing={packsRemaining > 0} />
+                        <PackSprite size="lg" />
                       </View>
                     </View>
                   ) : packsRemaining === 1 ? (
-                    <PackSprite size="md" glowing />
+                    <PackSprite size="lg" />
                   ) : (
-                    <PackSprite size="md" disabled />
+                    <PackSprite size="lg" disabled />
                   )}
                 </View>
               </Pressable>
 
-              {/* Status text */}
-              <View style={styles.packStatusRow}>
-                <PixelText
-                  variant="body"
-                  size="sm"
-                  color={packsRemaining > 0 ? colors.game.success : colors.textMuted}
-                >
-                  {packsRemaining}/{weeklyLimit} remaining
-                </PixelText>
+              {/* Pack count dots */}
+              <View style={styles.packDots}>
+                {Array.from({ length: weeklyLimit }, (_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.packDot,
+                      i < packsRemaining ? styles.packDotActive : styles.packDotInactive,
+                    ]}
+                  />
+                ))}
               </View>
 
               {packsRemaining > 0 && (
@@ -200,7 +198,7 @@ export function GameScreen() {
 
               <Pressable onPress={handleBuyPremiumPack}>
                 <View style={styles.packDisplay}>
-                  <PackSprite size="md" premium glowing />
+                  <PackSprite size="lg" premium />
                 </View>
               </Pressable>
 
@@ -316,13 +314,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: spacing[4],
+    paddingHorizontal: spacing[3],
+    paddingTop: spacing[3],
     paddingBottom: spacing[20],
-    gap: spacing[6],
+    gap: spacing[4],
+    flexGrow: 1,
   },
   // Pack section
   packSection: {
     alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
   },
   packRow: {
     flexDirection: 'row',
@@ -340,33 +342,47 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   packDisplay: {
-    height: 160,
+    height: 220,
     justifyContent: 'center',
     alignItems: 'center',
   },
   stackedPacks: {
     position: 'relative',
-    width: 140,
-    height: 160,
+    width: 180,
+    height: 220,
     justifyContent: 'flex-end',
     alignItems: 'center',
   },
   backPack: {
     position: 'absolute',
-    transform: [{ rotate: '8deg' }, { translateX: 15 }],
-    opacity: 0.7,
+    transform: [{ rotate: '10deg' }, { translateX: 20 }],
+    opacity: 0.75,
   },
   frontPack: {
     position: 'absolute',
-    transform: [{ rotate: '-8deg' }, { translateX: -15 }],
+    transform: [{ rotate: '-8deg' }, { translateX: -20 }],
     zIndex: 1,
   },
-  packStatusRow: {
+  packDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing[1],
     marginTop: spacing[1],
+  },
+  packDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  packDotActive: {
+    backgroundColor: colors.game.success,
+  },
+  packDotInactive: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   divider: {
     width: 1,
-    height: 180,
+    height: 240,
     backgroundColor: 'rgba(255,255,255,0.1)',
     alignSelf: 'center',
   },
