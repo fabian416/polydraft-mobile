@@ -9,27 +9,29 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-const SUPABASE_URL =
+function isValidUrl(s: string): boolean {
+  return s.startsWith('http://') || s.startsWith('https://');
+}
+
+const rawUrl =
   Constants.expoConfig?.extra?.SUPABASE_URL ??
   process.env.EXPO_PUBLIC_SUPABASE_URL ??
   '';
 
-const SUPABASE_ANON_KEY =
+const rawKey =
   Constants.expoConfig?.extra?.SUPABASE_ANON_KEY ??
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
   '';
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+const safeUrl = isValidUrl(rawUrl) ? rawUrl : 'https://placeholder.supabase.co';
+const safeKey = rawKey && !rawKey.startsWith('$') ? rawKey : 'placeholder';
+
+if (safeUrl.includes('placeholder')) {
   console.warn(
     '[Supabase] Missing SUPABASE_URL or SUPABASE_ANON_KEY. ' +
       'Set them in app.json extra or as EXPO_PUBLIC_ env vars.'
   );
 }
-
-// Use a placeholder URL if not configured to prevent crash on startup.
-// The app will show errors when trying to fetch data, but won't crash.
-const safeUrl = SUPABASE_URL || 'https://placeholder.supabase.co';
-const safeKey = SUPABASE_ANON_KEY || 'placeholder';
 
 /**
  * Singleton Supabase client for the mobile app.
