@@ -9,22 +9,24 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
-function isValidUrl(s: string): boolean {
-  return s.startsWith('http://') || s.startsWith('https://');
+function isUsableValue(val: unknown): val is string {
+  return typeof val === 'string' && val.length > 0 && !val.startsWith('$');
 }
 
-const rawUrl =
-  Constants.expoConfig?.extra?.SUPABASE_URL ??
-  process.env.EXPO_PUBLIC_SUPABASE_URL ??
-  '';
+function resolveEnv(extraKey: string, envKey: string): string {
+  const fromExtra = Constants.expoConfig?.extra?.[extraKey];
+  if (isUsableValue(fromExtra)) return fromExtra;
+  const fromEnv = process.env[envKey];
+  if (isUsableValue(fromEnv)) return fromEnv;
+  return '';
+}
 
-const rawKey =
-  Constants.expoConfig?.extra?.SUPABASE_ANON_KEY ??
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
-  '';
+const rawUrl = resolveEnv('SUPABASE_URL', 'EXPO_PUBLIC_SUPABASE_URL');
+const rawKey = resolveEnv('SUPABASE_ANON_KEY', 'EXPO_PUBLIC_SUPABASE_ANON_KEY');
 
+const isValidUrl = (s: string) => s.startsWith('http://') || s.startsWith('https://');
 const safeUrl = isValidUrl(rawUrl) ? rawUrl : 'https://placeholder.supabase.co';
-const safeKey = rawKey && !rawKey.startsWith('$') ? rawKey : 'placeholder';
+const safeKey = rawKey || 'placeholder';
 
 if (safeUrl.includes('placeholder')) {
   console.warn(

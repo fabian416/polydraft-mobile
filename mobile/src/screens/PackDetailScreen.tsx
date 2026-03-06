@@ -123,7 +123,7 @@ export function PackDetailScreen() {
           <PixelButton
             title="My Packs"
             variant="outline"
-            onPress={() => navigation.getParent()?.navigate('MyPacks')}
+            onPress={() => navigation.getParent()?.navigate('MainTabs', { screen: 'MyPacks' })}
             style={styles.actionButton}
           />
         </View>

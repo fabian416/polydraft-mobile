@@ -7,9 +7,8 @@ export type PackStackParamList = {
 };
 
 export type MainTabParamList = {
-  Home: undefined;
   Game: undefined;
-  Explore: undefined;
+  MyPacks: undefined;
   Leaderboard: undefined;
   Profile: undefined;
 };
@@ -17,7 +16,6 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<MainTabParamList>;
   EventDetail: { eventId: string };
-  MyPacks: undefined;
   PackFlow: NavigatorScreenParams<PackStackParamList>;
 };
 

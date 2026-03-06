@@ -14,13 +14,7 @@ import {
   getFallbackRarities,
   distanceToRarityBin,
 } from '../rarity';
-import Constants from 'expo-constants';
-
-// Default venue; can be overridden via app config
-const ACTIVE_VENUE =
-  Constants.expoConfig?.extra?.ACTIVE_VENUE ??
-  process.env.EXPO_PUBLIC_ACTIVE_VENUE ??
-  'polymarket';
+import { getActiveVenueId } from '../adapters/config';
 
 // ============================================
 // Types
@@ -153,7 +147,7 @@ async function getPoolFromDB(venue: string, packType: string): Promise<EventPool
 }
 
 export async function getPool(packType: string): Promise<EventPool | null> {
-  return getPoolFromDB(ACTIVE_VENUE, packType);
+  return getPoolFromDB(getActiveVenueId(), packType);
 }
 
 // ============================================

@@ -15,7 +15,7 @@ export const TREASURY_PUBKEY = new PublicKey(
 export const RPC_URL =
   process.env.EXPO_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com';
 
-export const PREMIUM_PACK_PRICE = 100_000_000; // 100 USDC (6 decimals)
+export const PREMIUM_PACK_PRICE = 100_000_000; // 100 PLAY (6 decimals)
 
 export const PLAY_MINT = new PublicKey(
   'PLAYs3GSSadH2q2JLS7djp7yzeT75NK78XgrE5YLrfq'

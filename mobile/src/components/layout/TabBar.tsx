@@ -3,11 +3,17 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const TAB_ICONS: Record<string, string> = {
-  Home: '🏠',
-  Game: '🎮',
-  Explore: '🔍',
+  Game: '🏠',
+  MyPacks: '📦',
   Leaderboard: '🏆',
   Profile: '👤',
+};
+
+const TAB_LABELS: Record<string, string> = {
+  Game: 'Home',
+  MyPacks: 'My Packs',
+  Leaderboard: 'Ranks',
+  Profile: 'Profile',
 };
 
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -15,7 +21,7 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     <View style={styles.container}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
-        const label = route.name;
+        const label = TAB_LABELS[route.name] ?? route.name;
         const isFocused = state.index === index;
         const icon = TAB_ICONS[route.name] ?? '?';
 

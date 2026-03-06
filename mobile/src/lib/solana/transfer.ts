@@ -73,11 +73,15 @@ export async function buildTransferTransaction(
 }
 
 /**
- * Send a signed transfer transaction and return the signature.
+ * Send a signed transfer transaction and return the signature + blockhash info
+ * for confirmation tracking.
  */
 export async function sendTransferTransaction(
-  signedTransaction: VersionedTransaction
-): Promise<string> {
+  signedTransaction: VersionedTransaction,
+  blockhash: string,
+  lastValidBlockHeight: number
+): Promise<{ signature: string; blockhash: string; lastValidBlockHeight: number }> {
   const connection = new Connection(RPC_URL, 'confirmed');
-  return connection.sendRawTransaction(signedTransaction.serialize());
+  const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+  return { signature, blockhash, lastValidBlockHeight };
 }

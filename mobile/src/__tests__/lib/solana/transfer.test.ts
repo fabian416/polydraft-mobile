@@ -77,15 +77,16 @@ describe('solana/transfer', () => {
   describe('sendTransferTransaction', () => {
     it('returns a transaction signature string', async () => {
       const mockTx = new VersionedTransaction({} as any);
-      const sig = await sendTransferTransaction(mockTx);
-      expect(typeof sig).toBe('string');
-      expect(sig).toBe('mockSignature123');
+      const result = await sendTransferTransaction(mockTx, 'mockBlockhash', 1000);
+      expect(result.signature).toBe('mockSignature123');
+      expect(result.blockhash).toBe('mockBlockhash');
+      expect(result.lastValidBlockHeight).toBe(1000);
     });
 
     it('serializes the transaction before sending', async () => {
       const mockTx = new VersionedTransaction({} as any);
       const spy = jest.spyOn(mockTx, 'serialize');
-      await sendTransferTransaction(mockTx);
+      await sendTransferTransaction(mockTx, 'mockBlockhash', 1000);
       expect(spy).toHaveBeenCalledTimes(1);
     });
   });

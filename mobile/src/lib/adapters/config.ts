@@ -12,11 +12,15 @@ import type { VenueId } from './types';
 // Active Venue (from environment)
 // ============================================
 
-const ACTIVE_VENUE_ID = (
-  Constants.expoConfig?.extra?.ACTIVE_VENUE ??
-  process.env.EXPO_PUBLIC_ACTIVE_VENUE ??
-  'jupiter'
-) as VenueId;
+function resolveEnv(extraKey: string, envKey: string, fallback: string): string {
+  const fromExtra = Constants.expoConfig?.extra?.[extraKey];
+  if (fromExtra && !fromExtra.startsWith('$')) return fromExtra;
+  const fromEnv = process.env[envKey];
+  if (fromEnv && !fromEnv.startsWith('$')) return fromEnv;
+  return fallback;
+}
+
+const ACTIVE_VENUE_ID = resolveEnv('ACTIVE_VENUE', 'EXPO_PUBLIC_ACTIVE_VENUE', 'polymarket') as VenueId;
 
 // ============================================
 // Config Interfaces
@@ -121,8 +125,8 @@ export const venueConfigs: Record<string, VenueConfig> = {
 
 export function getActiveVenueId(): VenueId {
   if (!venueConfigs[ACTIVE_VENUE_ID]) {
-    console.warn(`Invalid ACTIVE_VENUE: ${ACTIVE_VENUE_ID}, defaulting to jupiter`);
-    return 'jupiter';
+    console.warn(`Invalid ACTIVE_VENUE: ${ACTIVE_VENUE_ID}, defaulting to polymarket`);
+    return 'polymarket';
   }
   return ACTIVE_VENUE_ID;
 }

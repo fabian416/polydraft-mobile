@@ -3,7 +3,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { RootStackParamList } from './types';
 import { MainTabs } from './MainTabs';
 import { EventDetailScreen } from '../screens/EventDetailScreen';
-import { MyPacksScreen } from '../screens/MyPacksScreen';
 import { PackNavigator } from './PackNavigator';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -20,11 +19,6 @@ export function RootNavigator() {
       <Stack.Screen
         name="EventDetail"
         component={EventDetailScreen}
-        options={{ animation: 'slide_from_right' }}
-      />
-      <Stack.Screen
-        name="MyPacks"
-        component={MyPacksScreen}
         options={{ animation: 'slide_from_right' }}
       />
       <Stack.Screen

@@ -1,11 +1,46 @@
-import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { colors, spacing } from '../../lib/theme';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Animated, Easing } from 'react-native';
+import { spacing } from '../../lib/theme';
 
 interface ProgressDotsProps {
   total: number;
   current: number;
   completedCount: number;
+}
+
+function PulseDot() {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scale, {
+          toValue: 1.3,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scale, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [scale]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.dot,
+        styles.dotCurrent,
+        { transform: [{ scale }] },
+      ]}
+    />
+  );
 }
 
 export function ProgressDots({ total, current, completedCount }: ProgressDotsProps) {
@@ -15,14 +50,17 @@ export function ProgressDots({ total, current, completedCount }: ProgressDotsPro
         const isCompleted = i < completedCount;
         const isCurrent = i === current;
 
+        if (isCurrent) {
+          return <PulseDot key={i} />;
+        }
+
         return (
           <View
             key={i}
             style={[
               styles.dot,
               isCompleted && styles.dotCompleted,
-              isCurrent && styles.dotCurrent,
-              !isCompleted && !isCurrent && styles.dotPending,
+              !isCompleted && styles.dotPending,
             ]}
           />
         );
@@ -44,15 +82,15 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   dotCompleted: {
-    backgroundColor: colors.game.success,
+    backgroundColor: '#4ade80',
   },
   dotCurrent: {
-    backgroundColor: colors.game.gold,
+    backgroundColor: '#ffd700',
     width: 14,
     height: 14,
     borderRadius: 7,
   },
   dotPending: {
-    backgroundColor: colors.card.border,
+    backgroundColor: '#6b7280',
   },
 });

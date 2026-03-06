@@ -10,7 +10,7 @@ import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 
 type HomeNav = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList, 'Home'>,
+  BottomTabNavigationProp<MainTabParamList, 'Game'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
@@ -102,7 +102,7 @@ export function HomeScreen() {
             accentColor="#a855f7"
             badgeColor="#a855f7"
             icon="🔮"
-            onPress={() => navigation.navigate('Explore')}
+            onPress={() => navigation.navigate('Game')}
           />
 
           {/* Play Draft Card */}

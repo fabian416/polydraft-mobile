@@ -102,15 +102,16 @@ describe('solana/purchase', () => {
   describe('sendPurchaseTransaction', () => {
     it('returns a transaction signature string', async () => {
       const mockTx = new VersionedTransaction({} as any);
-      const signature = await sendPurchaseTransaction(mockTx);
-      expect(typeof signature).toBe('string');
-      expect(signature).toBe('mockSignature123');
+      const result = await sendPurchaseTransaction(mockTx, 'mockBlockhash', 1000);
+      expect(result.signature).toBe('mockSignature123');
+      expect(result.blockhash).toBe('mockBlockhash');
+      expect(result.lastValidBlockHeight).toBe(1000);
     });
 
     it('serializes the transaction before sending', async () => {
       const mockTx = new VersionedTransaction({} as any);
       const serializeSpy = jest.spyOn(mockTx, 'serialize');
-      await sendPurchaseTransaction(mockTx);
+      await sendPurchaseTransaction(mockTx, 'mockBlockhash', 1000);
       expect(serializeSpy).toHaveBeenCalledTimes(1);
     });
   });

@@ -9,7 +9,7 @@ export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
 // Pack limits
 export const CARDS_PER_PACK = 5;
-export const MAX_DAILY_FREE_PACKS = 3;
+export const WEEKLY_PACK_LIMIT = 2;
 export const REVEAL_DELAY_MS = 500;
 export const CARD_FLIP_DURATION_MS = 600;
 

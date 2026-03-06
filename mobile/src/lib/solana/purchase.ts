@@ -141,16 +141,23 @@ export async function buildPurchaseTransaction(
 }
 
 /**
- * Send a signed purchase transaction and return the signature.
+ * Send a signed purchase transaction and return the signature + blockhash info
+ * needed for confirmation.
  */
 export async function sendPurchaseTransaction(
-  signedTransaction: VersionedTransaction
-): Promise<string> {
+  signedTransaction: VersionedTransaction,
+  blockhash: string,
+  lastValidBlockHeight: number
+): Promise<{
+  signature: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}> {
   const connection = new Connection(RPC_URL, 'confirmed');
   const signature = await connection.sendRawTransaction(
     signedTransaction.serialize()
   );
-  return signature;
+  return { signature, blockhash, lastValidBlockHeight };
 }
 
 export { PREMIUM_PACK_PRICE };

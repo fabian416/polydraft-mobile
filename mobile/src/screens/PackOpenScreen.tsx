@@ -3,6 +3,7 @@ import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { v4 as uuidv4 } from 'uuid';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ScreenContainer } from '../components/layout/ScreenContainer';
 import { PixelText, PixelButton } from '../components/common';
 import { DraftPicker } from '../components/game/DraftPicker';
@@ -186,93 +187,101 @@ export function PackOpenScreen() {
   const currentEvent = events[currentIndex];
 
   return (
-    <ScreenContainer>
-      <View style={styles.container}>
-        {/* Loading */}
-        {phase === 'loading' && (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={colors.game.gold} />
-            <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.loadingText}>
-              Loading events...
-            </PixelText>
-          </View>
-        )}
-
-        {/* Error */}
-        {phase === 'error' && (
-          <View style={styles.centered}>
-            <PixelText variant="body" size="lg" color={colors.game.failure} style={styles.errorText}>
-              {errorMessage}
-            </PixelText>
-            <PixelButton
-              title="Try Again"
-              variant="primary"
-              onPress={() => {
-                setPhase('loading');
-                setErrorMessage('');
-                setEvents([]);
-                setCurrentIndex(0);
-                setPickedEvents([]);
-                // Re-trigger load
-                getEventsForPack('sports', 5).then((evts) => {
-                  if (evts.length < 5) {
-                    setErrorMessage('Not enough events available.');
-                    setPhase('error');
-                  } else {
-                    setEvents(evts);
-                    setPhase('drafting');
-                  }
-                }).catch(() => {
-                  setErrorMessage('Failed to load events.');
-                  setPhase('error');
-                });
-              }}
-            />
-          </View>
-        )}
-
-        {/* Drafting */}
-        {phase === 'drafting' && currentEvent && (
-          <View style={styles.draftContainer}>
-            {/* Progress */}
-            <View style={styles.progressSection}>
-              <PixelText variant="heading" size="sm" color={colors.game.gold} style={styles.progressLabel}>
-                PICK {currentIndex + 1} OF {events.length}
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <ScreenContainer>
+        <View style={styles.container}>
+          {/* Loading */}
+          {phase === 'loading' && (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={colors.game.gold} />
+              <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.loadingText}>
+                Loading events...
               </PixelText>
-              <ProgressDots
-                total={events.length}
-                current={currentIndex}
-                completedCount={pickedEvents.length}
+            </View>
+          )}
+
+          {/* Error */}
+          {phase === 'error' && (
+            <View style={styles.centered}>
+              <PixelText variant="body" size="lg" color={colors.game.failure} style={styles.errorText}>
+                {errorMessage}
+              </PixelText>
+              <PixelButton
+                title="Try Again"
+                variant="primary"
+                onPress={() => {
+                  setPhase('loading');
+                  setErrorMessage('');
+                  setEvents([]);
+                  setCurrentIndex(0);
+                  setPickedEvents([]);
+                  // Re-trigger load
+                  getEventsForPack('sports', 5).then((evts) => {
+                    if (evts.length < 5) {
+                      setErrorMessage('Not enough events available.');
+                      setPhase('error');
+                    } else {
+                      setEvents(evts);
+                      setPhase('drafting');
+                    }
+                  }).catch(() => {
+                    setErrorMessage('Failed to load events.');
+                    setPhase('error');
+                  });
+                }}
               />
             </View>
+          )}
 
-            {/* Draft Card */}
-            <View style={styles.cardSection}>
-              <DraftPicker
-                event={currentEvent}
-                position={currentIndex + 1}
-                total={events.length}
-                onPick={handlePick}
-              />
+          {/* Drafting */}
+          {phase === 'drafting' && currentEvent && (
+            <View style={styles.draftContainer}>
+              {/* Header */}
+              <View style={styles.headerSection}>
+                <PixelText variant="heading" size="lg" color={colors.game.gold} style={styles.headerTitle}>
+                  Make Your Picks
+                </PixelText>
+                <PixelText variant="body" size="sm" color={colors.textMuted} style={styles.headerSubtitle}>
+                  Swipe to choose
+                </PixelText>
+                <ProgressDots
+                  total={events.length}
+                  current={currentIndex}
+                  completedCount={pickedEvents.length}
+                />
+              </View>
+
+              {/* Draft Card */}
+              <View style={styles.cardSection}>
+                <DraftPicker
+                  event={currentEvent}
+                  position={currentIndex + 1}
+                  total={events.length}
+                  onPick={handlePick}
+                />
+              </View>
             </View>
-          </View>
-        )}
+          )}
 
-        {/* Submitting */}
-        {phase === 'submitting' && (
-          <View style={styles.centered}>
-            <ActivityIndicator size="large" color={colors.game.gold} />
-            <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.loadingText}>
-              Submitting your picks...
-            </PixelText>
-          </View>
-        )}
-      </View>
-    </ScreenContainer>
+          {/* Submitting */}
+          {phase === 'submitting' && (
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={colors.game.gold} />
+              <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.loadingText}>
+                Submitting your picks...
+              </PixelText>
+            </View>
+          )}
+        </View>
+      </ScreenContainer>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },
@@ -291,14 +300,17 @@ const styles = StyleSheet.create({
   },
   draftContainer: {
     flex: 1,
-    padding: spacing[4],
-  },
-  progressSection: {
-    alignItems: 'center',
-    marginBottom: spacing[4],
+    paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
   },
-  progressLabel: {
+  headerSection: {
+    alignItems: 'center',
+    marginBottom: spacing[3],
+  },
+  headerTitle: {
+    marginBottom: spacing[1],
+  },
+  headerSubtitle: {
     marginBottom: spacing[3],
   },
   cardSection: {
