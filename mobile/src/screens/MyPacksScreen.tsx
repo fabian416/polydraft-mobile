@@ -1,9 +1,19 @@
-import React, { useCallback } from 'react';
-import { View, FlatList, Pressable, RefreshControl, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import {
+  View,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Animated,
+  Easing,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/layout/ScreenContainer';
 import { Header } from '../components/layout/Header';
+import { GameBackground } from '../components/game/GameBackground';
+import { PackSprite } from '../components/game/PackSprite';
 import { PixelText, PixelCard } from '../components/common';
 import { usePackSummaries, useTotalPendingReveals } from '../stores/myPacks';
 import { colors, spacing, borderRadius } from '../lib/theme';
@@ -101,6 +111,107 @@ function PackCard({ pack, onPress }: { pack: PackSummary; onPress: () => void })
   );
 }
 
+function EmptyState() {
+  const navigation = useNavigation<NavProp>();
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Pack float
+    const float = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: -10,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    float.start();
+
+    // Button text pulse
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.4,
+          duration: 1200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulse.start();
+
+    return () => {
+      float.stop();
+      pulse.stop();
+    };
+  }, [floatAnim, pulseAnim]);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.94,
+      tension: 150,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 150,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <View style={styles.emptyState}>
+      <Animated.View style={{ transform: [{ translateY: floatAnim }] }}>
+        <PackSprite size="xl" />
+      </Animated.View>
+
+      <View style={styles.emptyTextGroup}>
+        <PixelText variant="heading" size="xl" color={colors.foreground}>
+          NO PACKS YET
+        </PixelText>
+        <PixelText variant="body" size="base" color={colors.textMuted}>
+          Open your first pack to start making picks!
+        </PixelText>
+      </View>
+
+      <Pressable
+        onPress={() => navigation.navigate('MainTabs', { screen: 'Game' })}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
+        <Animated.View style={[styles.openPackBtn, { transform: [{ scale: scaleAnim }] }]}>
+          <Animated.View style={{ opacity: pulseAnim }}>
+            <PixelText variant="heading" size="xl" color="#0a0a1a">
+              OPEN PACK
+            </PixelText>
+          </Animated.View>
+        </Animated.View>
+      </Pressable>
+    </View>
+  );
+}
+
 export function MyPacksScreen() {
   const navigation = useNavigation<NavProp>();
   const packSummaries = usePackSummaries();
@@ -110,7 +221,6 @@ export function MyPacksScreen() {
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
-    // Small delay to simulate refresh
     setTimeout(() => setRefreshing(false), 500);
   }, []);
 
@@ -135,6 +245,7 @@ export function MyPacksScreen() {
 
   return (
     <ScreenContainer>
+      <GameBackground />
       <Header />
 
       {/* Page Header */}
@@ -163,7 +274,10 @@ export function MyPacksScreen() {
         data={packSummaries}
         renderItem={renderPack}
         keyExtractor={keyExtractor}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          packSummaries.length === 0 && styles.listContentEmpty,
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -171,19 +285,7 @@ export function MyPacksScreen() {
             tintColor={colors.game.gold}
           />
         }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <PixelText variant="body" size="3xl" style={styles.emptyIcon}>
-              📦
-            </PixelText>
-            <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.emptyText}>
-              No packs yet
-            </PixelText>
-            <PixelText variant="body" size="base" color={colors.textMuted}>
-              Open your first pack to get started!
-            </PixelText>
-          </View>
-        }
+        ListEmptyComponent={<EmptyState />}
       />
     </ScreenContainer>
   );
@@ -210,6 +312,9 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     paddingBottom: spacing[20],
     gap: spacing[3],
+  },
+  listContentEmpty: {
+    flex: 1,
   },
   packCard: {
     marginBottom: 0,
@@ -260,14 +365,29 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.card.border,
   },
+  // Empty state
   emptyState: {
+    flex: 1,
     alignItems: 'center',
-    paddingTop: spacing[16],
+    justifyContent: 'center',
+    gap: spacing[6],
+    paddingBottom: spacing[10],
   },
-  emptyIcon: {
-    marginBottom: spacing[3],
+  emptyTextGroup: {
+    alignItems: 'center',
+    gap: spacing[2],
   },
-  emptyText: {
-    marginBottom: spacing[1],
+  openPackBtn: {
+    backgroundColor: colors.game.accent,
+    paddingHorizontal: spacing[10],
+    paddingVertical: spacing[5],
+    borderRadius: borderRadius.xl,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.15)',
+    shadowColor: colors.game.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 8,
   },
 });

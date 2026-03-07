@@ -14,7 +14,7 @@ export function RootNavigator() {
 
   return (
     <Stack.Navigator
-      initialRouteName="MainTabs"
+      initialRouteName="Home"
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: '#0a0a1a' },

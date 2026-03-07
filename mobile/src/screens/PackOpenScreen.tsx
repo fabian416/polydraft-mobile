@@ -23,6 +23,7 @@ import { useCurrentPackStore } from '../stores/currentPack';
 import { useMyPacksStore } from '../stores/myPacks';
 import { useSessionStore } from '../stores/session';
 import { playSound } from '../lib/audio';
+import { haptic } from '../lib/haptics';
 import { getEventsForPack } from '../lib/pools';
 import { createPackWithPicks } from '../lib/api/PackService';
 import { checkAvailability, WEEKLY_PACK_LIMIT } from '../lib/api/PackService';
@@ -95,58 +96,92 @@ export function PackOpenScreen() {
   const completeDraft = useCurrentPackStore((s) => s.completeDraft);
   const addPack = useMyPacksStore((s) => s.addPack);
 
-  // Pack wobble animation
+  // Animations
   const wobbleAnim = useRef(new Animated.Value(0)).current;
   const packScaleAnim = useRef(new Animated.Value(1)).current;
-
-  // Tap to open pulse
   const tapPulseAnim = useRef(new Animated.Value(0.5)).current;
-
-  // Balatro-style idle: gentle breathing scale + subtle tilt
+  const floatAnim = useRef(new Animated.Value(0)).current;
   const breatheAnim = useRef(new Animated.Value(1)).current;
 
+  // Idle: pack is alive, nervous, barely contained — begging to be opened
   useEffect(() => {
     if (phase === 'opening') {
-      // Gentle wobble (subtle, not frantic)
+      // Nervous wobble — quick twitchy rotation like it's shivering
       const wobble = Animated.loop(
         Animated.sequence([
           Animated.timing(wobbleAnim, {
-            toValue: -1.5, duration: 800,
+            toValue: -2.5, duration: 120,
             easing: Easing.inOut(Easing.ease), useNativeDriver: true,
           }),
           Animated.timing(wobbleAnim, {
-            toValue: 1.5, duration: 800,
+            toValue: 2.5, duration: 120,
             easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+          Animated.timing(wobbleAnim, {
+            toValue: -1, duration: 100,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+          Animated.timing(wobbleAnim, {
+            toValue: 1, duration: 100,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+          // Brief pause — like catching its breath
+          Animated.timing(wobbleAnim, {
+            toValue: 0, duration: 300,
+            easing: Easing.out(Easing.ease), useNativeDriver: true,
           }),
         ])
       );
       wobble.start();
 
-      // Breathing scale (Balatro card idle)
+      // Antsy float — bouncy, not smooth
+      const float = Animated.loop(
+        Animated.sequence([
+          Animated.timing(floatAnim, {
+            toValue: -6, duration: 600,
+            easing: Easing.out(Easing.quad), useNativeDriver: true,
+          }),
+          Animated.timing(floatAnim, {
+            toValue: 2, duration: 400,
+            easing: Easing.in(Easing.quad), useNativeDriver: true,
+          }),
+          Animated.timing(floatAnim, {
+            toValue: -3, duration: 500,
+            easing: Easing.out(Easing.quad), useNativeDriver: true,
+          }),
+          Animated.timing(floatAnim, {
+            toValue: 0, duration: 500,
+            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+          }),
+        ])
+      );
+      float.start();
+
+      // Breathing — like it's pulsing with energy
       const breathe = Animated.loop(
         Animated.sequence([
           Animated.timing(breatheAnim, {
-            toValue: 1.03, duration: 1200,
-            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+            toValue: 1.04, duration: 800,
+            easing: Easing.out(Easing.ease), useNativeDriver: true,
           }),
           Animated.timing(breatheAnim, {
-            toValue: 0.97, duration: 1200,
-            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+            toValue: 0.97, duration: 600,
+            easing: Easing.in(Easing.ease), useNativeDriver: true,
           }),
         ])
       );
       breathe.start();
 
-      // Tap text pulse
+      // "Tap to Open" pulse
       const pulse = Animated.loop(
         Animated.sequence([
           Animated.timing(tapPulseAnim, {
-            toValue: 1, duration: 1000,
-            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+            toValue: 1, duration: 800,
+            easing: Easing.out(Easing.ease), useNativeDriver: true,
           }),
           Animated.timing(tapPulseAnim, {
-            toValue: 0.3, duration: 1000,
-            easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+            toValue: 0.2, duration: 800,
+            easing: Easing.in(Easing.ease), useNativeDriver: true,
           }),
         ])
       );
@@ -154,11 +189,12 @@ export function PackOpenScreen() {
 
       return () => {
         wobble.stop();
+        float.stop();
         breathe.stop();
         pulse.stop();
       };
     }
-  }, [phase, wobbleAnim, breatheAnim, tapPulseAnim]);
+  }, [phase, wobbleAnim, floatAnim, breatheAnim, tapPulseAnim]);
 
   // Load events on mount
   useEffect(() => {
@@ -216,38 +252,73 @@ export function PackOpenScreen() {
     check();
   }, [phase, anonymousId, isPremium]);
 
-  // Prevent auto-tap from previous screen's touch propagation
+  // Prevent auto-tap: only enable after a real touch-up cycle on this screen
   const tapEnabledRef = useRef(false);
+  const mountTimeRef = useRef(0);
   useEffect(() => {
     if (phase === 'opening') {
       tapEnabledRef.current = false;
-      const timer = setTimeout(() => { tapEnabledRef.current = true; }, 500);
-      return () => clearTimeout(timer);
+      mountTimeRef.current = Date.now();
     } else {
       tapEnabledRef.current = false;
     }
   }, [phase]);
 
-  // Handle tap to open pack
+  // Handle tap: it's already nervous — you just make it BURST
   const handleOpenPack = useCallback(() => {
     if (phase !== 'opening' || !tapEnabledRef.current) return;
+    tapEnabledRef.current = false;
 
-    playSound('pack_open');
+    haptic('heavy');
 
-    // Balatro-style satisfying open: squeeze → pop → explode
-    Animated.sequence([
-      // Squeeze down
-      Animated.timing(packScaleAnim, { toValue: 0.85, duration: 120, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-      // Pop up big
-      Animated.spring(packScaleAnim, { toValue: 1.15, tension: 200, friction: 6, useNativeDriver: true }),
-      // Hold briefly
-      Animated.delay(100),
-      // Shrink and fade away
-      Animated.timing(packScaleAnim, { toValue: 0, duration: 250, easing: Easing.in(Easing.back(2)), useNativeDriver: true }),
-    ]).start(() => {
-      setPhase('dissolving');
+    // Kill idle anims — take over
+    floatAnim.stopAnimation();
+    breatheAnim.stopAnimation();
+    wobbleAnim.stopAnimation();
+    floatAnim.setValue(0);
+    breatheAnim.setValue(1);
+
+    // Frantic death rattle — shake violently while crushing down
+    const deathRattle = Animated.loop(
+      Animated.sequence([
+        Animated.timing(wobbleAnim, { toValue: -10, duration: 30, useNativeDriver: true }),
+        Animated.timing(wobbleAnim, { toValue: 10, duration: 30, useNativeDriver: true }),
+      ])
+    );
+    deathRattle.start();
+
+    // Crush it down fast
+    Animated.timing(packScaleAnim, {
+      toValue: 0.65,
+      duration: 350,
+      easing: Easing.in(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => {
+      // BANG — spring up huge
+      deathRattle.stop();
+      wobbleAnim.setValue(0);
+      haptic('heavy');
+      playSound('pack_open');
+
+      Animated.spring(packScaleAnim, {
+        toValue: 1.4,
+        tension: 500,
+        friction: 3,
+        useNativeDriver: true,
+      }).start(() => {
+        // Vanish
+        haptic('heavy');
+        Animated.timing(packScaleAnim, {
+          toValue: 0,
+          duration: 120,
+          easing: Easing.in(Easing.back(5)),
+          useNativeDriver: true,
+        }).start(() => {
+          setPhase('dissolving');
+        });
+      });
     });
-  }, [phase, packScaleAnim]);
+  }, [phase, packScaleAnim, wobbleAnim, floatAnim, breatheAnim]);
 
   // Handle premium pack payment
   const handlePayment = useCallback(async () => {
@@ -622,16 +693,24 @@ export function PackOpenScreen() {
           {/* Opening — Tap to Open Pack (Balatro style) */}
           {phase === 'opening' && (
             <View style={styles.centered}>
-              <Pressable onPress={handleOpenPack}>
+              <Pressable
+                onPressIn={() => {
+                  if (Date.now() - mountTimeRef.current > 800) {
+                    tapEnabledRef.current = true;
+                  }
+                }}
+                onPress={handleOpenPack}
+              >
                 <Animated.View
                   style={{
                     transform: [
-                      { rotate: wobbleAnim.interpolate({ inputRange: [-1.5, 1.5], outputRange: ['-1.5deg', '1.5deg'] }) },
+                      { translateY: floatAnim },
+                      { rotate: wobbleAnim.interpolate({ inputRange: [-8, 8], outputRange: ['-8deg', '8deg'] }) },
                       { scale: Animated.multiply(packScaleAnim, breatheAnim) },
                     ],
                   }}
                 >
-                  <PackSprite size="xl" premium={isPremium} />
+                  <PackSprite size="hero" premium={isPremium} />
                 </Animated.View>
               </Pressable>
               <Animated.View style={{ opacity: tapPulseAnim, marginTop: spacing[8] }}>
@@ -755,93 +834,13 @@ export function PackOpenScreen() {
             </View>
           )}
 
-          {/* Confirming — Celebration */}
+          {/* Confirming — Jackpot Celebration (Balatro style) */}
           {phase === 'confirming' && jackpotData && (
-            <View style={styles.centered}>
-              {/* Confetti */}
-              <View style={StyleSheet.absoluteFill} pointerEvents="none">
-                {CONFETTI_COLORS.map((color, i) =>
-                  Array.from({ length: 5 }, (_, j) => (
-                    <ConfettiParticle
-                      key={`${i}-${j}`}
-                      color={color}
-                      startX={Math.random() * SCREEN_WIDTH}
-                      delay={Math.random() * 1000}
-                    />
-                  ))
-                )}
-              </View>
-
-              {/* Emoji */}
-              <PixelText variant="body" size="4xl" style={styles.confirmEmoji}>
-                {'\u{1F3B0}'}
-              </PixelText>
-
-              {/* Header */}
-              <PixelText variant="heading" size="xl" color={colors.game.gold} style={styles.confirmTitle}>
-                PICKS LOCKED IN!
-              </PixelText>
-
-              {/* Jackpot Card */}
-              <View style={styles.jackpotCard}>
-                <PixelText variant="heading" size="xs" color={colors.game.gold} uppercase style={styles.jackpotLabel}>
-                  POTENTIAL JACKPOT
-                </PixelText>
-                <PixelText variant="heading" size="2xl" style={styles.jackpotAmount}>
-                  ${jackpotData.maxPoints.totalPoints.toFixed(2)} USD
-                </PixelText>
-                <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.jackpotSub}>
-                  If you nail all 5 picks!
-                </PixelText>
-                <PixelText variant="body" size="lg" color={colors.game.gold}>
-                  {'\u{1F3B2}'} {formatProbability(jackpotData.combinedProb)} chance
-                </PixelText>
-              </View>
-
-              {/* Mini pick chips */}
-              <View style={styles.confirmChips}>
-                {pickedEvents.map(({ event, outcome }) => {
-                  const prob =
-                    outcome === 'a'
-                      ? event.outcome_a_probability
-                      : outcome === 'b'
-                        ? event.outcome_b_probability
-                        : event.outcome_draw_probability ?? 0;
-                  const label =
-                    outcome === 'a'
-                      ? event.outcome_a_label
-                      : outcome === 'b'
-                        ? event.outcome_b_label
-                        : event.outcome_draw_label || 'Draw';
-                  const rarity =
-                    event.rarityInfo?.rarity ??
-                    getEventRarity(event.outcome_a_probability, event.outcome_b_probability);
-                  const rarityConfig = getRarityConfig(rarity);
-
-                  return (
-                    <View
-                      key={event.id}
-                      style={[styles.confirmChip, { borderColor: rarityConfig.hex }]}
-                    >
-                      <PixelText variant="body" size="sm">
-                        {label.slice(0, 3).toUpperCase()}
-                      </PixelText>
-                      <PixelText variant="body" size="xs" color={colors.textMuted}>
-                        {formatProbability(prob)}
-                      </PixelText>
-                    </View>
-                  );
-                })}
-              </View>
-
-              {/* CTA */}
-              <PixelButton
-                title="LET'S GO!"
-                variant="primary"
-                onPress={handleLetsGo}
-                style={styles.letsGoButton}
-              />
-            </View>
+            <JackpotScreen
+              jackpotData={jackpotData}
+              pickedEvents={pickedEvents}
+              onLetsGo={handleLetsGo}
+            />
           )}
         </View>
       </ScreenContainer>
@@ -912,6 +911,204 @@ function RevealMiniCard({
         {emoji}
       </PixelText>
     </Animated.View>
+  );
+}
+
+// ===== Jackpot Screen (Balatro-style celebration) =====
+
+function JackpotScreen({
+  jackpotData,
+  pickedEvents,
+  onLetsGo,
+}: {
+  jackpotData: { maxPoints: { totalPoints: number }; combinedProb: number };
+  pickedEvents: Array<{ event: Event; outcome: Outcome }>;
+  onLetsGo: () => void;
+}) {
+  // Staggered entrance animations
+  const titleScale = useRef(new Animated.Value(0)).current;
+  const cardSlide = useRef(new Animated.Value(60)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  const chipsOpacity = useRef(new Animated.Value(0)).current;
+  const btnOpacity = useRef(new Animated.Value(0)).current;
+  const amountScale = useRef(new Animated.Value(0.5)).current;
+  const jackpotGlow = useRef(new Animated.Value(0.6)).current;
+  const btnScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Title slam in
+    Animated.spring(titleScale, {
+      toValue: 1, tension: 200, friction: 8, delay: 200,
+      useNativeDriver: true,
+    }).start();
+
+    // Jackpot card slides up
+    Animated.parallel([
+      Animated.spring(cardSlide, {
+        toValue: 0, tension: 80, friction: 10, delay: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardOpacity, {
+        toValue: 1, duration: 300, delay: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Amount pop
+    Animated.spring(amountScale, {
+      toValue: 1, tension: 150, friction: 6, delay: 800,
+      useNativeDriver: true,
+    }).start();
+
+    // Chips fade in
+    Animated.timing(chipsOpacity, {
+      toValue: 1, duration: 400, delay: 1100,
+      useNativeDriver: true,
+    }).start();
+
+    // Button fade in
+    Animated.timing(btnOpacity, {
+      toValue: 1, duration: 400, delay: 1400,
+      useNativeDriver: true,
+    }).start();
+
+    // Jackpot glow pulse (continuous)
+    const glow = Animated.loop(
+      Animated.sequence([
+        Animated.timing(jackpotGlow, {
+          toValue: 1, duration: 1000,
+          easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+        }),
+        Animated.timing(jackpotGlow, {
+          toValue: 0.5, duration: 1000,
+          easing: Easing.inOut(Easing.ease), useNativeDriver: true,
+        }),
+      ])
+    );
+    glow.start();
+
+    return () => glow.stop();
+  }, []);
+
+  const handlePressIn = () => {
+    Animated.timing(btnScale, { toValue: 0.94, duration: 50, useNativeDriver: true }).start();
+  };
+  const handlePressOut = () => {
+    Animated.spring(btnScale, { toValue: 1, tension: 200, friction: 8, useNativeDriver: true }).start();
+  };
+
+  return (
+    <View style={styles.centered}>
+      {/* Continuous confetti rain */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {CONFETTI_COLORS.map((color, i) =>
+          Array.from({ length: 8 }, (_, j) => (
+            <ConfettiParticle
+              key={`${i}-${j}`}
+              color={color}
+              startX={Math.random() * SCREEN_WIDTH}
+              delay={Math.random() * 2000}
+            />
+          ))
+        )}
+      </View>
+
+      {/* Title — slams in with scale */}
+      <Animated.View style={{
+        transform: [{ scale: titleScale }],
+        marginBottom: spacing[2],
+      }}>
+        <PixelText variant="body" size="4xl">
+          {'\u{1F3B0}'}
+        </PixelText>
+      </Animated.View>
+
+      <Animated.View style={{
+        transform: [{ scale: titleScale }],
+        marginBottom: spacing[4],
+        alignItems: 'center',
+      }}>
+        <PixelText variant="heading" size="xl" color={colors.game.gold} style={{ textAlign: 'center' }}>
+          PICKS LOCKED IN!
+        </PixelText>
+      </Animated.View>
+
+      {/* Jackpot Card — hero element, big and dominant */}
+      <Animated.View style={[
+        styles.jackpotCard,
+        {
+          transform: [{ translateY: cardSlide }],
+          opacity: cardOpacity,
+        },
+      ]}>
+        <Animated.View style={{ opacity: jackpotGlow }}>
+          <PixelText variant="heading" size="sm" color={colors.game.gold} uppercase style={styles.jackpotLabel}>
+            POTENTIAL JACKPOT
+          </PixelText>
+        </Animated.View>
+
+        <Animated.View style={{ transform: [{ scale: amountScale }], alignItems: 'center' }}>
+          <PixelText variant="heading" size="2xl" style={styles.jackpotAmount}>
+            ${jackpotData.maxPoints.totalPoints.toFixed(2)} USD
+          </PixelText>
+        </Animated.View>
+
+        <PixelText variant="body" size="lg" color={colors.textMuted} style={styles.jackpotSub}>
+          If you nail all 5 picks!
+        </PixelText>
+        <PixelText variant="body" size="lg" color={colors.game.gold}>
+          {'\u{1F3B2}'} {formatProbability(jackpotData.combinedProb)} chance
+        </PixelText>
+      </Animated.View>
+
+      {/* Pick chips */}
+      <Animated.View style={[styles.confirmChips, { opacity: chipsOpacity }]}>
+        {pickedEvents.map(({ event, outcome }) => {
+          const prob =
+            outcome === 'a'
+              ? event.outcome_a_probability
+              : outcome === 'b'
+                ? event.outcome_b_probability
+                : event.outcome_draw_probability ?? 0;
+          const label =
+            outcome === 'a'
+              ? event.outcome_a_label
+              : outcome === 'b'
+                ? event.outcome_b_label
+                : event.outcome_draw_label || 'Draw';
+          const rarity =
+            event.rarityInfo?.rarity ??
+            getEventRarity(event.outcome_a_probability, event.outcome_b_probability);
+          const rarityConfig = getRarityConfig(rarity);
+
+          return (
+            <View
+              key={event.id}
+              style={[styles.confirmChip, { borderColor: rarityConfig.hex }]}
+            >
+              <PixelText variant="body" size="sm">
+                {label.slice(0, 3).toUpperCase()}
+              </PixelText>
+              <PixelText variant="body" size="xs" color={colors.textMuted}>
+                {formatProbability(prob)}
+              </PixelText>
+            </View>
+          );
+        })}
+      </Animated.View>
+
+      {/* CTA Button — big, juicy, Balatro-style */}
+      <Animated.View style={{ opacity: btnOpacity }}>
+        <Pressable onPress={onLetsGo} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+          <View style={styles.letsGoBtnShadow} />
+          <Animated.View style={[styles.letsGoBtn, { transform: [{ scale: btnScale }] }]}>
+            <PixelText variant="heading" size="xl" color="#fff">
+              LET'S GO!
+            </PixelText>
+          </Animated.View>
+        </Pressable>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -1148,32 +1345,34 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     borderWidth: 2,
   },
-  // Confirming
-  confirmEmoji: {
-    marginBottom: spacing[4],
-  },
-  confirmTitle: {
-    marginBottom: spacing[6],
-  },
+  // Confirming — Jackpot
   jackpotCard: {
-    width: '100%',
+    width: '85%',
     maxWidth: 340,
-    backgroundColor: 'rgba(180, 134, 11, 0.15)',
+    backgroundColor: 'rgba(180, 134, 11, 0.12)',
     borderWidth: 2,
     borderColor: colors.game.gold,
     borderRadius: borderRadius.xl,
-    padding: spacing[5],
+    paddingVertical: spacing[6],
+    paddingHorizontal: spacing[5],
     alignItems: 'center',
-    marginBottom: spacing[6],
+    marginBottom: spacing[4],
+    shadowColor: '#ffd700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 8,
   },
   jackpotLabel: {
-    marginBottom: spacing[3],
-    letterSpacing: 3,
+    marginBottom: spacing[2],
+    letterSpacing: 4,
   },
   jackpotAmount: {
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
+    textAlign: 'center',
   },
   jackpotSub: {
+    marginTop: spacing[3],
     marginBottom: spacing[2],
   },
   confirmChips: {
@@ -1181,7 +1380,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: spacing[2],
-    marginBottom: spacing[8],
+    marginBottom: spacing[6],
   },
   confirmChip: {
     alignItems: 'center',
@@ -1191,7 +1390,25 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     backgroundColor: 'rgba(107, 114, 128, 0.15)',
   },
-  letsGoButton: {
-    minWidth: 200,
+  letsGoBtnShadow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 4,
+    bottom: -4,
+    backgroundColor: '#b91c1c',
+    borderRadius: borderRadius.lg,
+  },
+  letsGoBtn: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: spacing[12],
+    paddingVertical: spacing[4],
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 6,
   },
 });

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
-import { View, Image, StyleSheet, Dimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { View, Image, StyleSheet, Dimensions, Pressable, Animated as RNAnimated, Easing as RNEasing } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -47,9 +47,9 @@ const SUBCATEGORY_EMOJI: Record<string, string> = {
 };
 const DEFAULT_EMOJI = '\u{1F3AF}';
 
-// Card dimensions - take up most of the screen
-const CARD_WIDTH = SCREEN_WIDTH - spacing[6] * 2;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
+// Card dimensions - dominate the screen like Balatro jokers
+const CARD_WIDTH = SCREEN_WIDTH - spacing[4] * 2;
+const CARD_HEIGHT = SCREEN_HEIGHT * 0.68;
 
 interface DraftPickerProps {
   event: Event;
@@ -58,11 +58,67 @@ interface DraftPickerProps {
   onPick: (outcome: Outcome) => void;
 }
 
+function PickButton({
+  label,
+  color,
+  onPress,
+  direction,
+}: {
+  label: string;
+  color: string;
+  onPress: () => void;
+  direction: 'left' | 'right' | 'down';
+}) {
+  const translateY = useRef(new RNAnimated.Value(0)).current;
+
+  const arrow = direction === 'left' ? '\u2190 ' : direction === 'right' ? ' \u2192' : '\u2195 ';
+  const short = label.length > 12 ? label.slice(0, 11) + '.' : label;
+  const displayText = direction === 'left' ? arrow + short : direction === 'down' ? arrow + short : short + arrow;
+
+  const handlePressIn = () => {
+    RNAnimated.timing(translateY, {
+      toValue: 3,
+      duration: 50,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    RNAnimated.timing(translateY, {
+      toValue: 0,
+      duration: 80,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut} style={styles.pickButtonWrap}>
+      {/* Pixel shadow layer */}
+      <View style={[styles.pickButtonShadow, { backgroundColor: color + '40' }]} />
+      {/* Button face */}
+      <RNAnimated.View
+        style={[
+          styles.pickButton,
+          {
+            backgroundColor: color,
+            transform: [{ translateY }],
+          },
+        ]}
+      >
+        <PixelText variant="heading" size="xs" color="#fff" numberOfLines={1}>
+          {displayText}
+        </PixelText>
+      </RNAnimated.View>
+    </Pressable>
+  );
+}
+
 export function DraftPicker({ event, position, total, onPick }: DraftPickerProps) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const cardOpacity = useSharedValue(1);
   const isExiting = useSharedValue(false);
+
 
   const rarity =
     event.rarityInfo?.rarity ??
@@ -122,10 +178,11 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
       const passedX = absX > SWIPE_X_THRESHOLD || velX > VELOCITY_THRESHOLD;
       const passedY = absY > SWIPE_Y_THRESHOLD || velY > VELOCITY_THRESHOLD;
 
-      // Draw (swipe down)
-      if (event.supports_draw && e.translationY > 0 && passedY && absX < SWIPE_X_THRESHOLD) {
+      // Draw (swipe down OR up)
+      if (event.supports_draw && passedY && absX < SWIPE_X_THRESHOLD) {
         isExiting.value = true;
-        translateY.value = withTiming(EXIT_Y, { duration: EXIT_DURATION });
+        const exitDirection = e.translationY > 0 ? EXIT_Y : -EXIT_Y;
+        translateY.value = withTiming(exitDirection, { duration: EXIT_DURATION });
         cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
         runOnJS(triggerPick)('draw');
         return;
@@ -195,11 +252,12 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
     return { opacity };
   });
 
-  // Overlay Draw (swipe down)
+  // Overlay Draw (swipe down OR up)
   const overlayDrawStyle = useAnimatedStyle(() => {
     if (!event.supports_draw) return { opacity: 0 };
+    const absY = Math.abs(translateY.value);
     const opacity = interpolate(
-      translateY.value,
+      absY,
       [0, SWIPE_Y_THRESHOLD],
       [0, 1],
       Extrapolation.CLAMP,
@@ -324,19 +382,28 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
         </Animated.View>
       </GestureDetector>
 
-      {/* Swipe hints OUTSIDE the card, below it */}
-      <View style={styles.swipeHintsRow}>
-        <PixelText variant="body" size="lg" color={COLOR_A}>
-          {'\u2190 '}{event.outcome_a_label}
-        </PixelText>
+      {/* Pick buttons OUTSIDE the card, below it */}
+      <View style={styles.pickButtonsRow}>
+        <PickButton
+          label={event.outcome_a_label}
+          color={COLOR_A}
+          onPress={() => triggerPick('a')}
+          direction="left"
+        />
         {event.supports_draw && (
-          <PixelText variant="body" size="lg" color={COLOR_DRAW}>
-            {'\u2193 '}{event.outcome_draw_label || 'Draw'}
-          </PixelText>
+          <PickButton
+            label={event.outcome_draw_label || 'Draw'}
+            color={COLOR_DRAW}
+            onPress={() => triggerPick('draw')}
+            direction="down"
+          />
         )}
-        <PixelText variant="body" size="lg" color={COLOR_B}>
-          {event.outcome_b_label}{' \u2192'}
-        </PixelText>
+        <PickButton
+          label={event.outcome_b_label}
+          color={COLOR_B}
+          onPress={() => triggerPick('b')}
+          direction="right"
+        />
       </View>
     </View>
   );
@@ -495,12 +562,37 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  swipeHintsRow: {
+  pickButtonsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing[2],
+    justifyContent: 'center',
+    alignItems: 'stretch',
+    gap: spacing[2],
     paddingTop: spacing[3],
-    width: '100%',
+    paddingHorizontal: spacing[1],
+    width: CARD_WIDTH,
+  },
+  pickButtonWrap: {
+    flex: 1,
+    position: 'relative',
+    height: 44,
+  },
+  pickButtonShadow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 3,
+    bottom: -3,
+    borderRadius: borderRadius.md,
+  },
+  pickButton: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing[1],
   },
 });

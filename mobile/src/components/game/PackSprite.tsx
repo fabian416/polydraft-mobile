@@ -3,7 +3,7 @@ import { Animated, StyleSheet, Easing, Image } from 'react-native';
 
 interface PackSpriteProps {
   type?: 'sports' | 'economy' | 'politics' | 'crypto' | 'default';
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'hero';
   premium?: boolean;
   glowing?: boolean;
   disabled?: boolean;
@@ -17,6 +17,7 @@ const sizeDimensions = {
   md: { width: 130, height: 170 },
   lg: { width: 170, height: 220 },
   xl: { width: 220, height: 286 },
+  hero: { width: 300, height: 390 },
 };
 
 export function PackSprite({
