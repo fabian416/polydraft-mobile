@@ -4,6 +4,7 @@ export type PackStackParamList = {
   PackOpen: { premium?: boolean } | undefined;
   PackReveal: { packId: string };
   PackDetail: { packId: string };
+  PremiumPack: undefined;
 };
 
 export type MainTabParamList = {

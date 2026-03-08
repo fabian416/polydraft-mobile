@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef } from 'react';
-import { View, StyleSheet, ScrollView, Pressable, Animated } from 'react-native';
+import { View, StyleSheet, ScrollView, Pressable, Animated, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { CompositeNavigationProp } from '@react-navigation/native';
@@ -21,6 +21,8 @@ import {
 } from '../stores';
 
 import type { RootStackParamList, MainTabParamList } from '../navigation/types';
+
+const usdcLogo = require('../../assets/images/usdc-logo.png');
 
 type GameNav = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Game'>,
@@ -59,7 +61,7 @@ export function GameScreen() {
   }, [navigation]);
 
   const handleBuyPremiumPack = useCallback(() => {
-    navigation.navigate('PackFlow', { screen: 'PackOpen' });
+    navigation.navigate('PackFlow', { screen: 'PremiumPack' });
   }, [navigation]);
 
   const handleViewMyPacks = useCallback(() => {
@@ -140,8 +142,9 @@ export function GameScreen() {
               </Pressable>
 
               <Pressable onPress={handleBuyPremiumPack} style={styles.priceBadge}>
+                <Image source={usdcLogo} style={{ width: 20, height: 20 }} />
                 <PixelText variant="heading" size="xs" color={colors.black}>
-                  100 $PLAY
+                  1 USDC
                 </PixelText>
               </Pressable>
             </View>
@@ -400,6 +403,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[1],
     borderRadius: borderRadius.full,
     marginTop: spacing[1],
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    gap: 4,
   },
   packCaption: {
     marginTop: spacing[4],

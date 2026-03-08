@@ -48,6 +48,12 @@ export function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const loadingRef = useRef(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const getQueryParams = useCallback(() => ({
+    category: selectedCategory !== 'all' ? selectedCategory : undefined,
+    search: searchQuery.trim() || undefined,
+  }), [selectedCategory, searchQuery]);
 
   // Initial fetch
   useEffect(() => {
@@ -56,13 +62,29 @@ export function ExploreScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Re-fetch when category changes
+  useEffect(() => {
+    loadMarkets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory]);
+
+  // Debounced search
+  useEffect(() => {
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      loadMarkets();
+    }, 400);
+    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
   const loadMarkets = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoadingMarkets(true);
 
     try {
-      const { markets: data } = await getMarkets();
+      const { markets: data } = await getMarkets(getQueryParams());
       setMarkets(data);
     } catch {
       setMarketsError('Failed to load markets');
@@ -70,20 +92,20 @@ export function ExploreScreen() {
       setLoadingMarkets(false);
       loadingRef.current = false;
     }
-  }, [setMarkets, setLoadingMarkets, setMarketsError]);
+  }, [setMarkets, setLoadingMarkets, setMarketsError, getQueryParams]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     loadingRef.current = false;
     try {
-      const { markets: data } = await getMarkets();
+      const { markets: data } = await getMarkets(getQueryParams());
       setMarkets(data);
     } catch {
       setMarketsError('Failed to refresh markets');
     } finally {
       setRefreshing(false);
     }
-  }, [setMarkets, setMarketsError]);
+  }, [setMarkets, setMarketsError, getQueryParams]);
 
   const handleEndReached = useCallback(async () => {
     if (loadingRef.current || !hasMore || isLoadingMarkets) return;
@@ -91,7 +113,10 @@ export function ExploreScreen() {
     setLoadingMarkets(true);
 
     try {
-      const { markets: data } = await getMarkets();
+      const { markets: data } = await getMarkets({
+        ...getQueryParams(),
+        offset: markets.length,
+      });
       appendMarkets(data, null);
     } catch {
       // silent fail on pagination
@@ -99,7 +124,7 @@ export function ExploreScreen() {
       setLoadingMarkets(false);
       loadingRef.current = false;
     }
-  }, [hasMore, isLoadingMarkets, appendMarkets, setLoadingMarkets]);
+  }, [hasMore, isLoadingMarkets, appendMarkets, setLoadingMarkets, getQueryParams, markets.length]);
 
   const handleCardPress = useCallback(
     (market: ExploreMarket) => {
@@ -108,19 +133,8 @@ export function ExploreScreen() {
     [navigation]
   );
 
-  // Filter markets by category and search
-  const filteredMarkets = markets.filter((m) => {
-    if (selectedCategory !== 'all' && m.category !== selectedCategory) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        m.title.toLowerCase().includes(q) ||
-        m.category.toLowerCase().includes(q) ||
-        (m.description?.toLowerCase().includes(q) ?? false)
-      );
-    }
-    return true;
-  });
+  // Markets are already filtered server-side by category and search
+  const filteredMarkets = markets;
 
   const pendingBets = useExploreStore((s) => s.pendingBets);
 

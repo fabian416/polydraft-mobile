@@ -28,6 +28,7 @@ import { getEventsForPack } from '../lib/pools';
 import { createPackWithPicks } from '../lib/api/PackService';
 import { checkAvailability, WEEKLY_PACK_LIMIT } from '../lib/api/PackService';
 import {
+  calculatePoints,
   calculateMaxPotentialPoints,
   calculateCombinedProbability,
   formatProbability,
@@ -36,7 +37,7 @@ import { getEventRarity, getRarityConfig } from '../lib/rarity';
 import { colors, spacing, borderRadius, shadows } from '../lib/theme';
 import { useWalletAuthStore } from '../stores/walletAuth';
 import { buildPurchaseTransaction, sendPurchaseTransaction, PREMIUM_PACK_PRICE } from '../lib/solana/purchase';
-import { buildTransferTransaction, sendTransferTransaction } from '../lib/solana/transfer';
+import { buildUsdcTransferTransaction, sendAndConfirmTransfer } from '../lib/solana/transfer';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { RPC_URL } from '../lib/solana/constants';
 import type { PackStackParamList } from '../navigation/types';
@@ -500,11 +501,43 @@ export function PackOpenScreen() {
       created_at: now,
     }));
 
+    // ===== MOCK RESOLUTION FOR TESTING =====
+    // Randomly resolve each pick (60% correct) so reveals work without Supabase
+    const mockResolvedPicks = userPicks.map((pick) => {
+      const isCorrect = Math.random() < 0.6;
+      const scoring = calculatePoints({
+        probabilityAtPick: pick.probability_snapshot,
+        isCorrect,
+      });
+      return {
+        ...pick,
+        is_resolved: true,
+        is_correct: isCorrect,
+        resolved_at: now,
+        points_awarded: scoring.points,
+        event: {
+          ...pick.event!,
+          winning_outcome: isCorrect
+            ? pick.picked_outcome
+            : (pick.picked_outcome === 'a' ? 'b' : 'a') as Outcome,
+          status: 'resolved' as const,
+        },
+      };
+    });
+    // ===== END MOCK =====
+
+    // Update userPack stats from mock-resolved picks
+    const correctCount = mockResolvedPicks.filter(p => p.is_correct).length;
+    const totalPoints = mockResolvedPicks.reduce((sum, p) => sum + p.points_awarded, 0);
+    userPack.total_points = totalPoints;
+    userPack.correct_picks = correctCount;
+    userPack.resolution_status = 'fully_resolved';
+
     // Update stores
     const packEvents = picks.map((pe) => pe.event);
     setPack(userPack, packEvents);
-    completeDraft(userPicks as UserPick[]);
-    addPack(userPack, packEvents, userPicks);
+    completeDraft(mockResolvedPicks as UserPick[]);
+    addPack(userPack, packEvents, mockResolvedPicks);
 
     // Show confirming celebration
     setPhase('confirming');

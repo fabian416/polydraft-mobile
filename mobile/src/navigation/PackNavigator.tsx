@@ -4,6 +4,7 @@ import type { PackStackParamList } from './types';
 import { PackOpenScreen } from '../screens/PackOpenScreen';
 import { PackRevealScreen } from '../screens/PackRevealScreen';
 import { PackDetailScreen } from '../screens/PackDetailScreen';
+import { PremiumPackScreen } from '../screens/PremiumPackScreen';
 
 const Stack = createNativeStackNavigator<PackStackParamList>();
 
@@ -19,6 +20,7 @@ export function PackNavigator() {
       <Stack.Screen name="PackOpen" component={PackOpenScreen} />
       <Stack.Screen name="PackReveal" component={PackRevealScreen} />
       <Stack.Screen name="PackDetail" component={PackDetailScreen} />
+      <Stack.Screen name="PremiumPack" component={PremiumPackScreen} />
     </Stack.Navigator>
   );
 }
