@@ -97,7 +97,7 @@ async function getPoolFromDB(venue: string, packType: string): Promise<EventPool
     .from('events')
     .select('*')
     .eq('pool_id', dbPool.id)
-    .eq('status', 'upcoming');
+    .in('status', ['upcoming', 'active']);
 
   if (eventsError) {
     console.error('Error fetching events for pool:', eventsError);

@@ -57,8 +57,7 @@ let storedAuthToken: string | null = null;
 
 const APP_IDENTITY = {
   name: 'Polydraft',
-  uri: 'https://polydraft.app',
-  icon: 'favicon.ico',
+  uri: 'polydraft://',
 };
 
 // ============================================

@@ -35,9 +35,9 @@
       "expo-av"
     ],
     "extra": {
-      "SUPABASE_URL": "${EXPO_PUBLIC_SUPABASE_URL}",
-      "SUPABASE_ANON_KEY": "${EXPO_PUBLIC_SUPABASE_ANON_KEY}",
-      "ACTIVE_VENUE": "${EXPO_PUBLIC_ACTIVE_VENUE}",
+      "SUPABASE_URL": "https://ndzpmzjnyndyvscwhiyp.supabase.co",
+      "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kenBtempueW5keXZzY3doaXlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwODYxMzQsImV4cCI6MjA4NDY2MjEzNH0.AdaGFXTAxPIupbHdhqNnVBgolFqjnnQoTf-t8ghU5k0",
+      "ACTIVE_VENUE": "jupiter",
       "eas": {
         "projectId": "8a4dc842-4f39-4c2f-8e24-f95759bfea40"
       }
