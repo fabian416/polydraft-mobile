@@ -13,7 +13,7 @@ export const TREASURY_PUBKEY = new PublicKey(
 );
 
 export const RPC_URL =
-  process.env.EXPO_PUBLIC_SOLANA_RPC_URL || 'https://api.devnet.solana.com';
+  process.env.EXPO_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
 export const PREMIUM_PACK_PRICE = 1_000_000; // 1 USDC (6 decimals)
 

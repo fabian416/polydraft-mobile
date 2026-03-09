@@ -81,7 +81,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
     try {
       await transact(async (wallet: Web3MobileWallet) => {
         const authResult = await wallet.authorize({
-          cluster: 'devnet',
+          cluster: 'mainnet-beta',
           identity: APP_IDENTITY,
         });
 
@@ -113,7 +113,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
       }
     }
     const authResult = await wallet.authorize({
-      cluster: 'devnet',
+      cluster: 'mainnet-beta',
       identity: APP_IDENTITY,
     });
     storedAuthToken = authResult.auth_token;
