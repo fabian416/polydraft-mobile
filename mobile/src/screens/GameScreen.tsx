@@ -11,6 +11,7 @@ import { PixelText, PixelButton, PixelCard } from '../components/common';
 import { PackSprite } from '../components/game/PackSprite';
 import { WeeklyStats } from '../components/game/WeeklyStats';
 import { colors, spacing, borderRadius } from '../lib/theme';
+import { playSound } from '../lib/audio';
 import {
   useSessionStore,
   useProfile,
@@ -57,10 +58,12 @@ export function GameScreen() {
   const previewPacks = activePacks.slice(0, 3);
 
   const handleOpenFreePack = useCallback(() => {
+    playSound('nav_tick');
     navigation.navigate('PackFlow', { screen: 'PackOpen' });
   }, [navigation]);
 
   const handleBuyPremiumPack = useCallback(() => {
+    playSound('nav_tick');
     navigation.navigate('PackFlow', { screen: 'PremiumPack' });
   }, [navigation]);
 

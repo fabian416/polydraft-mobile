@@ -12,7 +12,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RouteProp } from '@react-navigation/native';
 import { v4 as uuidv4 } from 'uuid';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 import { ScreenContainer } from '../components/layout/ScreenContainer';
 import { PixelText, PixelButton } from '../components/common';
 import { DraftPicker } from '../components/game/DraftPicker';
@@ -359,7 +359,6 @@ export function PackOpenScreen() {
         'confirmed'
       );
 
-      playSound('pack_open');
       setPhase('opening');
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Payment failed';
@@ -374,7 +373,17 @@ export function PackOpenScreen() {
   useEffect(() => {
     if (phase === 'revealing' && revealedCards.length < events.length) {
       const timer = setTimeout(() => {
-        playSound('card_deal');
+        const idx = revealedCards.length;
+        const evt = events[idx];
+        if (evt) {
+          const r = evt.rarityInfo?.rarity ?? getEventRarity(evt.outcome_a_probability, evt.outcome_b_probability);
+          if (r === 'legendary') playSound('reveal_legendary');
+          else if (r === 'epic') playSound('reveal_epic');
+          else if (r === 'rare') playSound('reveal_rare');
+          else playSound('card_deal');
+        } else {
+          playSound('card_deal');
+        }
         setRevealedCards((prev) => [...prev, prev.length]);
       }, 200);
       return () => clearTimeout(timer);
@@ -388,8 +397,7 @@ export function PackOpenScreen() {
   const handlePick = useCallback(
     (outcome: Outcome) => {
       if (phase !== 'swiping' || currentIndex >= events.length) return;
-
-      playSound('card_pick');
+      playSound('focus_pop');
 
       const event = events[currentIndex];
       const newPicked = [...pickedEvents, { event, outcome }];
@@ -540,6 +548,7 @@ export function PackOpenScreen() {
     addPack(userPack, packEvents, mockResolvedPicks);
 
     // Show confirming celebration
+    playSound('purchase_success');
     setPhase('confirming');
   };
 
@@ -567,7 +576,6 @@ export function PackOpenScreen() {
   const currentEvent = events[currentIndex];
 
   return (
-    <GestureHandlerRootView style={styles.gestureRoot}>
       <ScreenContainer>
         <View style={styles.container}>
           {/* Loading */}
@@ -877,7 +885,6 @@ export function PackOpenScreen() {
           )}
         </View>
       </ScreenContainer>
-    </GestureHandlerRootView>
   );
 }
 

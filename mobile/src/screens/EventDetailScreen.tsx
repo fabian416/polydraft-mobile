@@ -6,38 +6,83 @@ import {
   TouchableOpacity,
   Pressable,
   Modal,
-  Animated,
+  Animated as RNAnimated,
   Dimensions,
   Alert,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../components/layout/ScreenContainer';
 import { GameBackground } from '../components/game/GameBackground';
 import { PixelText } from '../components/common';
-import { ProbabilityBar } from '../components/explore/ProbabilityBar';
 import { LoadingSpinner } from '../components/common';
+import { OutcomeDots } from '../components/explore/OutcomeDots';
 import { useExploreStore } from '../stores/explore';
 import { useWallet } from '../providers/WalletProvider';
 import { getMarketById } from '../lib/api/ExploreService';
 import { haptic } from '../lib/haptics';
+import { playSound, type SoundName } from '../lib/audio';
 import { buildUsdcTransferTransaction, sendAndConfirmTransfer } from '../lib/solana/transfer';
 import { colors, spacing, borderRadius } from '../lib/theme';
 import type { RootStackParamList } from '../navigation/types';
-import type { ExploreMarket } from '../types';
+import type { ExploreMarket, ExploreOutcome } from '../types';
 
 type EventDetailRoute = RouteProp<RootStackParamList, 'EventDetail'>;
 type EventDetailNav = NativeStackNavigationProp<RootStackParamList>;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - spacing[4] * 2;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
+const CARD_HEIGHT = SCREEN_HEIGHT * 0.64;
+
+// Swipe thresholds (matching DraftPicker)
+const SWIPE_X_THRESHOLD = 80;
+const SWIPE_Y_THRESHOLD = 80;
+const VELOCITY_THRESHOLD = 500;
+const EXIT_X = 500;
+const EXIT_Y = 500;
+const MAX_ROTATION = 20;
+const OVERLAY_ROTATION = 12;
+const EXIT_DURATION = 200;
 
 const AMOUNTS = [2, 5, 10, 25] as const;
 type Amount = (typeof AMOUNTS)[number];
 
 type BetDirection = 'yes' | 'no';
 type PurchaseState = 'idle' | 'processing' | 'success' | 'error';
+
+// ============================================
+// Image fallback chain: outcome.image_slug → outcome.image_url → market.image_url → emoji
+// ============================================
+
+function resolveOutcomeImage(
+  outcome: ExploreOutcome,
+  market: ExploreMarket
+): string | null {
+  // image_slug would be a constructed URL in production
+  if (outcome.image_url) return outcome.image_url;
+  if (market.image_url) return market.image_url;
+  return null;
+}
+
+function getCategoryEmoji(category: string): string {
+  const lower = category.toLowerCase();
+  if (lower.includes('sport') || lower.includes('nba') || lower.includes('nfl')) return '\u{1F3C0}';
+  if (lower.includes('politic') || lower.includes('election')) return '\u{1F5F3}\uFE0F';
+  if (lower.includes('crypto') || lower.includes('bitcoin')) return '\u{1F4B0}';
+  if (lower.includes('econ') || lower.includes('finance')) return '\u{1F4C8}';
+  if (lower.includes('entertain') || lower.includes('oscar')) return '\u{1F3AC}';
+  return '\u{1F3AF}';
+}
 
 // ============================================
 // ActionButton (YES / NO / PASS with pixel shadow)
@@ -48,17 +93,19 @@ function ActionButton({
   color,
   shadowColor,
   onPress,
+  icon,
 }: {
   label: string;
   color: string;
   shadowColor: string;
   onPress: () => void;
+  icon?: string;
 }) {
-  const translateY = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new RNAnimated.Value(0)).current;
 
   const handlePressIn = () => {
     haptic('light');
-    Animated.timing(translateY, {
+    RNAnimated.timing(translateY, {
       toValue: 4,
       duration: 50,
       useNativeDriver: true,
@@ -66,7 +113,7 @@ function ActionButton({
   };
 
   const handlePressOut = () => {
-    Animated.timing(translateY, {
+    RNAnimated.timing(translateY, {
       toValue: 0,
       duration: 80,
       useNativeDriver: true,
@@ -80,19 +127,17 @@ function ActionButton({
       onPressOut={handlePressOut}
       style={styles.actionButtonWrap}
     >
-      {/* Shadow layer */}
       <View style={[styles.actionButtonShadow, { backgroundColor: shadowColor }]} />
-      {/* Button face */}
-      <Animated.View
+      <RNAnimated.View
         style={[
           styles.actionButtonFace,
           { backgroundColor: color, transform: [{ translateY }] },
         ]}
       >
         <PixelText variant="heading" size="sm" color="#fff">
-          {label}
+          {icon ? `${icon} ${label}` : label}
         </PixelText>
-      </Animated.View>
+      </RNAnimated.View>
     </Pressable>
   );
 }
@@ -110,20 +155,21 @@ function AmountChip({
   selected: boolean;
   onPress: () => void;
 }) {
-  const scale = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new RNAnimated.Value(1)).current;
 
   const handlePress = () => {
     haptic('selection');
-    Animated.sequence([
-      Animated.timing(scale, { toValue: 0.9, duration: 60, useNativeDriver: true }),
-      Animated.spring(scale, { toValue: 1, damping: 12, stiffness: 200, useNativeDriver: true }),
+    playSound('amount_tick');
+    RNAnimated.sequence([
+      RNAnimated.timing(scale, { toValue: 0.9, duration: 60, useNativeDriver: true }),
+      RNAnimated.spring(scale, { toValue: 1, damping: 12, stiffness: 200, useNativeDriver: true }),
     ]).start();
     onPress();
   };
 
   return (
     <Pressable onPress={handlePress} style={styles.amountChipWrap}>
-      <Animated.View
+      <RNAnimated.View
         style={[
           styles.amountChip,
           selected && styles.amountChipSelected,
@@ -137,24 +183,26 @@ function AmountChip({
         >
           ${amount}
         </PixelText>
-      </Animated.View>
+      </RNAnimated.View>
     </Pressable>
   );
 }
 
 // ============================================
-// BetModal
+// BetModal (accepts explicit outcome)
 // ============================================
 
 function BetModal({
   visible,
   direction,
   market,
+  outcome,
   onClose,
 }: {
   visible: boolean;
   direction: BetDirection;
   market: ExploreMarket;
+  outcome: ExploreOutcome;
   onClose: () => void;
 }) {
   const { publicKey, connected, connecting, connect, signTransaction } = useWallet();
@@ -162,45 +210,39 @@ function BetModal({
   const [selectedAmount, setSelectedAmount] = useState<Amount>(5);
   const [purchaseState, setPurchaseState] = useState<PurchaseState>('idle');
 
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-
-  // Button press animation
-  const ctaTranslateY = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new RNAnimated.Value(SCREEN_HEIGHT)).current;
+  const backdropOpacity = useRef(new RNAnimated.Value(0)).current;
+  const ctaTranslateY = useRef(new RNAnimated.Value(0)).current;
 
   const isYes = direction === 'yes';
   const accentColor = isYes ? '#22c55e' : '#ef4444';
   const accentDark = isYes ? '#15803d' : '#b91c1c';
+  const probability = Math.round(outcome.probability * 100);
 
-  const outcomeA = market.outcomes[0];
-  const outcomeB = market.outcomes[1];
-  const outcome = isYes ? outcomeA : outcomeB;
-  const probability = outcome ? Math.round(outcome.probability * 100) : 50;
-
-  // Animate in/out
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.spring(slideAnim, {
+      playSound('nav_tick');
+      RNAnimated.parallel([
+        RNAnimated.spring(slideAnim, {
           toValue: 0,
           damping: 22,
           stiffness: 180,
           useNativeDriver: true,
         }),
-        Animated.timing(backdropOpacity, {
+        RNAnimated.timing(backdropOpacity, {
           toValue: 1,
           duration: 250,
           useNativeDriver: true,
         }),
       ]).start();
     } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
+      RNAnimated.parallel([
+        RNAnimated.timing(slideAnim, {
           toValue: SCREEN_HEIGHT,
           duration: 200,
           useNativeDriver: true,
         }),
-        Animated.timing(backdropOpacity, {
+        RNAnimated.timing(backdropOpacity, {
           toValue: 0,
           duration: 200,
           useNativeDriver: true,
@@ -211,13 +253,14 @@ function BetModal({
 
   const handleClose = useCallback(() => {
     haptic('light');
-    Animated.parallel([
-      Animated.timing(slideAnim, {
+    playSound('modal_close');
+    RNAnimated.parallel([
+      RNAnimated.timing(slideAnim, {
         toValue: SCREEN_HEIGHT,
         duration: 200,
         useNativeDriver: true,
       }),
-      Animated.timing(backdropOpacity, {
+      RNAnimated.timing(backdropOpacity, {
         toValue: 0,
         duration: 200,
         useNativeDriver: true,
@@ -242,12 +285,12 @@ function BetModal({
       return;
     }
 
-    if (!publicKey || !outcome) return;
+    if (!publicKey) return;
 
     setPurchaseState('processing');
 
     try {
-      const amountInBaseUnits = selectedAmount * 1_000_000; // USDC has 6 decimals
+      const amountInBaseUnits = selectedAmount * 1_000_000;
       const { transaction, blockhash, lastValidBlockHeight } =
         await buildUsdcTransferTransaction(publicKey, amountInBaseUnits);
 
@@ -271,12 +314,12 @@ function BetModal({
 
       setPurchaseState('success');
       haptic('success');
+      playSound('purchase_confirm');
       handleClose();
     } catch (error: any) {
       console.error('Purchase failed:', error);
       setPurchaseState('error');
       haptic('error');
-
       const message = error?.message?.includes('insufficient')
         ? 'Insufficient USDC balance. Please fund your wallet and try again.'
         : error?.message?.includes('User rejected')
@@ -287,32 +330,15 @@ function BetModal({
       setPurchaseState('idle');
     }
   }, [
-    connected,
-    connect,
-    publicKey,
-    outcome,
-    selectedAmount,
-    signTransaction,
-    addPendingBet,
-    market.id,
-    direction,
-    handleClose,
+    connected, connect, publicKey, outcome, selectedAmount,
+    signTransaction, addPendingBet, market.id, direction, handleClose,
   ]);
 
   const handleCtaPressIn = () => {
-    Animated.timing(ctaTranslateY, {
-      toValue: 4,
-      duration: 50,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.timing(ctaTranslateY, { toValue: 4, duration: 50, useNativeDriver: true }).start();
   };
-
   const handleCtaPressOut = () => {
-    Animated.timing(ctaTranslateY, {
-      toValue: 0,
-      duration: 80,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.timing(ctaTranslateY, { toValue: 0, duration: 80, useNativeDriver: true }).start();
   };
 
   const isProcessing = purchaseState === 'processing';
@@ -322,7 +348,6 @@ function BetModal({
       ? 'Processing...'
       : `Buy ${isYes ? 'Yes' : 'No'} $${selectedAmount}`;
 
-  // CTA shadow shrink
   const ctaShadowTranslateY = ctaTranslateY.interpolate({
     inputRange: [0, 4],
     outputRange: [4, 0],
@@ -330,60 +355,39 @@ function BetModal({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
-      {/* Backdrop */}
-      <Animated.View style={[styles.modalBackdrop, { opacity: backdropOpacity }]}>
+      <RNAnimated.View style={[styles.modalBackdrop, { opacity: backdropOpacity }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
-      </Animated.View>
+      </RNAnimated.View>
 
-      {/* Sheet */}
-      <Animated.View
-        style={[styles.modalSheet, { transform: [{ translateY: slideAnim }] }]}
-      >
-        {/* Header */}
+      <RNAnimated.View style={[styles.modalSheet, { transform: [{ translateY: slideAnim }] }]}>
         <View style={styles.modalHeader}>
           <PixelText variant="heading" size="lg" color={accentColor}>
             BUY {isYes ? 'YES' : 'NO'}
           </PixelText>
           <TouchableOpacity onPress={handleClose} style={styles.modalCloseBtn}>
-            <PixelText variant="heading" size="sm" color={colors.textMuted}>
-              X
-            </PixelText>
+            <PixelText variant="heading" size="sm" color={colors.textMuted}>X</PixelText>
           </TouchableOpacity>
         </View>
 
-        {/* Event image compact */}
         {market.image_url && (
           <View style={styles.modalImageWrap}>
-            <Image
-              source={{ uri: market.image_url }}
-              style={styles.modalImage}
-              resizeMode="cover"
-            />
+            <Image source={{ uri: market.image_url }} style={styles.modalImage} resizeMode="cover" />
           </View>
         )}
 
-        {/* Outcome + probability */}
         <View style={styles.modalOutcomeRow}>
           <View style={[styles.modalOutcomeDot, { backgroundColor: accentColor }]} />
           <PixelText variant="body" size="xl" color={colors.foreground} numberOfLines={1}>
-            {outcome?.label ?? (isYes ? 'Yes' : 'No')}
+            {outcome.label}
           </PixelText>
           <PixelText variant="heading" size="xl" color={accentColor}>
             {probability}%
           </PixelText>
         </View>
 
-        {/* Connect Wallet button (only when not connected) */}
         {!connected && (
           <Pressable
-            onPress={async () => {
-              haptic('medium');
-              try {
-                await connect();
-              } catch {
-                haptic('error');
-              }
-            }}
+            onPress={async () => { haptic('medium'); try { await connect(); } catch { haptic('error'); } }}
             style={styles.connectWalletBtn}
             disabled={connecting}
           >
@@ -396,7 +400,6 @@ function BetModal({
           </Pressable>
         )}
 
-        {/* Connected wallet indicator */}
         {connected && publicKey && (
           <View style={styles.walletConnectedRow}>
             <View style={styles.walletDot} />
@@ -406,92 +409,65 @@ function BetModal({
           </View>
         )}
 
-        {/* Amount selector */}
         <View style={styles.amountSection}>
           <PixelText variant="heading" size="xs" color={colors.textMuted} uppercase>
             Select amount (USDC)
           </PixelText>
           <View style={styles.amountRow}>
             {AMOUNTS.map((amt) => (
-              <AmountChip
-                key={amt}
-                amount={amt}
-                selected={selectedAmount === amt}
-                onPress={() => setSelectedAmount(amt)}
-              />
+              <AmountChip key={amt} amount={amt} selected={selectedAmount === amt} onPress={() => setSelectedAmount(amt)} />
             ))}
           </View>
         </View>
 
-        {/* Bottom buttons */}
         <View style={styles.modalBottomRow}>
-          {/* Cancel */}
           <Pressable onPress={handleClose} style={styles.cancelBtn}>
-            <PixelText variant="body" size="lg" color={colors.textMuted}>
-              Cancel
-            </PixelText>
+            <PixelText variant="body" size="lg" color={colors.textMuted}>Cancel</PixelText>
           </Pressable>
-
-          {/* CTA */}
           <View style={styles.ctaWrap}>
-            <Animated.View style={{ transform: [{ translateY: ctaTranslateY }] }}>
-              <Animated.View
-                style={[
-                  styles.ctaShadow,
-                  {
-                    backgroundColor: connected ? accentDark : '#5b21b6',
-                    transform: [{ translateY: ctaShadowTranslateY }],
-                  },
-                ]}
+            <RNAnimated.View style={{ transform: [{ translateY: ctaTranslateY }] }}>
+              <RNAnimated.View
+                style={[styles.ctaShadow, { backgroundColor: connected ? accentDark : '#5b21b6', transform: [{ translateY: ctaShadowTranslateY }] }]}
               />
               <Pressable
                 onPress={handleConnectAndBuy}
                 onPressIn={handleCtaPressIn}
                 onPressOut={handleCtaPressOut}
                 disabled={isProcessing}
-                style={[
-                  styles.ctaButton,
-                  {
-                    backgroundColor: connected ? accentColor : '#7c3aed',
-                    opacity: isProcessing ? 0.6 : 1,
-                  },
-                ]}
+                style={[styles.ctaButton, { backgroundColor: connected ? accentColor : '#7c3aed', opacity: isProcessing ? 0.6 : 1 }]}
               >
                 <PixelText variant="heading" size="xs" color={colors.white} numberOfLines={1}>
                   {ctaLabel}
                 </PixelText>
               </Pressable>
-            </Animated.View>
+            </RNAnimated.View>
           </View>
         </View>
-      </Animated.View>
+      </RNAnimated.View>
     </Modal>
   );
 }
 
 // ============================================
-// Helpers
-// ============================================
-
-function getCategoryEmoji(category: string): string {
-  const lower = category.toLowerCase();
-  if (lower.includes('sport')) return '(ball)';
-  if (lower.includes('politic')) return '(vote)';
-  if (lower.includes('crypto')) return '(btc)';
-  if (lower.includes('econ')) return '(chart)';
-  if (lower.includes('entertain')) return '(film)';
-  return '(mkt)';
-}
-
-// ============================================
-// EventDetailScreen
+// EventDetailScreen — Tinder-style swipe with gestures
 // ============================================
 
 export function EventDetailScreen() {
   const navigation = useNavigation<EventDetailNav>();
   const route = useRoute<EventDetailRoute>();
-  const { eventId } = route.params;
-  const { selectEvent } = useExploreStore();
+  const { eventId, swipeMode } = route.params;
+
+  const {
+    markets,
+    currentOutcomeIndex,
+    swipeModeEventIds,
+    currentEventIndex,
+    pendingBets,
+    selectEvent,
+    nextOutcome,
+    nextEvent,
+    setOutcomeIndex,
+  } = useExploreStore();
 
   const [market, setMarket] = useState<ExploreMarket | null>(null);
   const [loading, setLoading] = useState(true);
@@ -502,14 +478,34 @@ export function EventDetailScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [betDirection, setBetDirection] = useState<BetDirection>('yes');
 
-  // Card entrance animation
-  const cardScale = useRef(new Animated.Value(0.9)).current;
-  const cardOpacity = useRef(new Animated.Value(0)).current;
+  // Reanimated shared values for gesture
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const cardOpacity = useSharedValue(1);
+  const isExiting = useSharedValue(false);
 
+  // Wrapper for playSound callable via runOnJS in gesture worklet
+  const playSoundJS = useCallback((name: string) => playSound(name as SoundName), []);
+
+  // Current outcome
+  const currentOutcome = market?.outcomes[currentOutcomeIndex] ?? null;
+  const totalOutcomes = market?.outcomes.length ?? 0;
+  const isLastOutcome = currentOutcomeIndex >= totalOutcomes - 1;
+  const isLastEvent = currentEventIndex >= swipeModeEventIds.length - 1;
+
+  // Betted indices for dots
+  const bettedIndices = market
+    ? market.outcomes
+        .map((o, i) => (pendingBets.some((b) => b.marketId === market.id && b.outcomeId === o.id) ? i : -1))
+        .filter((i) => i >= 0)
+    : [];
+
+  // ---- Load initial event ----
   useEffect(() => {
     async function load() {
       setLoading(true);
       setError(null);
+      setImageError(false);
       try {
         const data = await getMarketById(eventId);
         if (data) {
@@ -525,63 +521,200 @@ export function EventDetailScreen() {
       }
     }
     load();
-    return () => selectEvent(null);
   }, [eventId, selectEvent]);
 
-  // Animate card in when market loads
+  // ---- Sync from store when advancing events ----
+  const selectedEvent = useExploreStore((s) => s.selectedEvent);
   useEffect(() => {
-    if (market) {
-      Animated.parallel([
-        Animated.spring(cardScale, {
-          toValue: 1,
-          damping: 16,
-          stiffness: 140,
-          useNativeDriver: true,
-        }),
-        Animated.timing(cardOpacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
+    if (selectedEvent && selectedEvent.id !== market?.id) {
+      setMarket(selectedEvent);
+      setImageError(false);
+      // Reset card position for new event
+      translateX.value = 0;
+      translateY.value = 0;
+      cardOpacity.value = 1;
+      isExiting.value = false;
     }
-  }, [market, cardScale, cardOpacity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEvent?.id]);
 
-  const handleYes = useCallback(() => {
+  // Reset card for new outcome
+  const resetCard = useCallback(() => {
+    translateX.value = 0;
+    translateY.value = 0;
+    cardOpacity.value = 1;
+    isExiting.value = false;
+  }, [translateX, translateY, cardOpacity, isExiting]);
+
+  // ---- Advance to next outcome/event ----
+  const advanceAfterSwipe = useCallback(() => {
+    if (!market) return;
+
+    if (isLastOutcome) {
+      if (swipeMode && !isLastEvent) {
+        nextEvent();
+        // resetCard will be called by the selectedEvent effect
+      } else {
+        navigation.goBack();
+      }
+    } else {
+      nextOutcome();
+      resetCard();
+    }
+  }, [market, isLastOutcome, isLastEvent, swipeMode, nextOutcome, nextEvent, navigation, resetCard]);
+
+  // ---- Open BetModal ----
+  const openBetModal = useCallback((direction: BetDirection) => {
     haptic('heavy');
-    setBetDirection('yes');
+    setBetDirection(direction);
     setModalVisible(true);
-  }, []);
+    // Reset card position (user stays on this outcome after modal)
+    resetCard();
+  }, [resetCard]);
 
-  const handleNo = useCallback(() => {
-    haptic('heavy');
-    setBetDirection('no');
-    setModalVisible(true);
-  }, []);
+  // ---- Pan gesture (swipe right=YES, left=NO, down=PASS) ----
+  const panGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      if (isExiting.value) return;
+      translateX.value = e.translationX;
+      translateY.value = e.translationY;
+    })
+    .onEnd((e) => {
+      if (isExiting.value) return;
 
+      const absX = Math.abs(e.translationX);
+      const absY = e.translationY; // positive = down
+      const velX = Math.abs(e.velocityX);
+      const velY = Math.abs(e.velocityY);
+
+      const passedX = absX > SWIPE_X_THRESHOLD || velX > VELOCITY_THRESHOLD;
+      const passedY = absY > SWIPE_Y_THRESHOLD || velY > VELOCITY_THRESHOLD;
+
+      // PASS — swipe down
+      if (passedY && e.translationY > 0 && absX < SWIPE_X_THRESHOLD) {
+        isExiting.value = true;
+        translateY.value = withTiming(EXIT_Y, { duration: EXIT_DURATION });
+        cardOpacity.value = withTiming(0, { duration: EXIT_DURATION }, () => {
+          runOnJS(haptic)('medium');
+          runOnJS(playSoundJS)('carousel_slide');
+          runOnJS(advanceAfterSwipe)();
+        });
+        return;
+      }
+
+      // Horizontal swipe
+      if (absX > Math.abs(e.translationY)) {
+        if (passedX) {
+          isExiting.value = true;
+          if (e.translationX > 0) {
+            // Swipe RIGHT → YES
+            translateX.value = withTiming(EXIT_X, { duration: EXIT_DURATION });
+            cardOpacity.value = withTiming(0, { duration: EXIT_DURATION }, () => {
+              runOnJS(playSoundJS)('focus_pop');
+              runOnJS(openBetModal)('yes');
+            });
+          } else {
+            // Swipe LEFT → NO
+            translateX.value = withTiming(-EXIT_X, { duration: EXIT_DURATION });
+            cardOpacity.value = withTiming(0, { duration: EXIT_DURATION }, () => {
+              runOnJS(playSoundJS)('focus_pop');
+              runOnJS(openBetModal)('no');
+            });
+          }
+          return;
+        }
+      }
+
+      // Spring back
+      translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+      translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+    });
+
+  // ---- Animated styles ----
+  const cardAnimatedStyle = useAnimatedStyle(() => {
+    const rotation = interpolate(
+      translateX.value,
+      [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
+      [-MAX_ROTATION, 0, MAX_ROTATION],
+      Extrapolation.CLAMP,
+    );
+    return {
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { rotate: `${rotation}deg` },
+      ],
+      opacity: cardOpacity.value,
+    };
+  });
+
+  // YES overlay (swipe right)
+  const overlayYesStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [0, SWIPE_X_THRESHOLD],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return { opacity };
+  });
+
+  // NO overlay (swipe left)
+  const overlayNoStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateX.value,
+      [0, -SWIPE_X_THRESHOLD],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return { opacity };
+  });
+
+  // PASS overlay (swipe down)
+  const overlayPassStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateY.value,
+      [0, SWIPE_Y_THRESHOLD],
+      [0, 1],
+      Extrapolation.CLAMP,
+    );
+    return { opacity };
+  });
+
+  // ---- Button handlers (fallback for non-gesture) ----
+  const handleYes = useCallback(() => { playSound('focus_pop'); openBetModal('yes'); }, [openBetModal]);
+  const handleNo = useCallback(() => { playSound('focus_pop'); openBetModal('no'); }, [openBetModal]);
   const handlePass = useCallback(() => {
     haptic('medium');
-    navigation.goBack();
-  }, [navigation]);
+    playSound('carousel_slide');
+    advanceAfterSwipe();
+  }, [advanceAfterSwipe]);
 
   const handleCloseModal = useCallback(() => {
     setModalVisible(false);
   }, []);
 
-  // Loading
+  const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
+  // ---- Resolve image for current outcome ----
+  const outcomeImageUrl = currentOutcome && market
+    ? resolveOutcomeImage(currentOutcome, market)
+    : null;
+  const hasValidImage = !!outcomeImageUrl && !imageError;
+  const probability = currentOutcome ? Math.round(currentOutcome.probability * 100) : 0;
+
+  // ---- Loading ----
   if (loading) {
     return (
       <ScreenContainer>
         <GameBackground />
         <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <PixelText variant="heading" size="sm" color={colors.foreground}>
-              {'<'}
-            </PixelText>
+          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+            <PixelText variant="heading" size="sm" color={colors.foreground}>{'<'}</PixelText>
           </TouchableOpacity>
-          <PixelText variant="heading" size="sm" uppercase>
-            Loading...
-          </PixelText>
+          <PixelText variant="heading" size="sm" uppercase>Loading...</PixelText>
           <View style={styles.backButton} />
         </View>
         <View style={styles.centerContainer}>
@@ -591,39 +724,53 @@ export function EventDetailScreen() {
     );
   }
 
-  // Error
+  // ---- Error ----
   if (error || !market) {
     return (
       <ScreenContainer>
         <GameBackground />
         <View style={styles.headerBar}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <PixelText variant="heading" size="sm" color={colors.foreground}>
-              {'<'}
-            </PixelText>
+          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+            <PixelText variant="heading" size="sm" color={colors.foreground}>{'<'}</PixelText>
           </TouchableOpacity>
-          <PixelText variant="heading" size="sm" uppercase>
-            Error
-          </PixelText>
+          <PixelText variant="heading" size="sm" uppercase>Error</PixelText>
           <View style={styles.backButton} />
         </View>
         <View style={styles.centerContainer}>
           <PixelText variant="body" size="lg" color={colors.textMuted}>
             {error || 'Market not found'}
           </PixelText>
-          <Pressable onPress={() => navigation.goBack()} style={styles.errorBackBtn}>
-            <PixelText variant="body" size="lg" color={colors.foreground}>
-              Go Back
-            </PixelText>
+          <Pressable onPress={handleBack} style={styles.errorBackBtn}>
+            <PixelText variant="body" size="lg" color={colors.foreground}>Go Back</PixelText>
           </Pressable>
         </View>
       </ScreenContainer>
     );
   }
 
-  const outcomeA = market.outcomes[0];
-  const outcomeB = market.outcomes[1];
-  const hasValidImage = !!market.image_url && !imageError;
+  // ---- No outcomes ----
+  if (!currentOutcome || totalOutcomes === 0) {
+    return (
+      <ScreenContainer>
+        <GameBackground />
+        <View style={styles.headerBar}>
+          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+            <PixelText variant="heading" size="sm" color={colors.foreground}>{'<'}</PixelText>
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <PixelText variant="body" size="sm" color={colors.foreground}>{market.category.toUpperCase()}</PixelText>
+          </View>
+          <View style={styles.backButton} />
+        </View>
+        <View style={styles.centerContainer}>
+          <PixelText variant="body" size="lg" color={colors.textMuted}>No outcomes available</PixelText>
+          <Pressable onPress={handleBack} style={styles.errorBackBtn}>
+            <PixelText variant="body" size="lg" color={colors.foreground}>Go Back</PixelText>
+          </Pressable>
+        </View>
+      </ScreenContainer>
+    );
+  }
 
   return (
     <ScreenContainer>
@@ -631,114 +778,171 @@ export function EventDetailScreen() {
 
       {/* Header */}
       <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <PixelText variant="heading" size="sm" color={colors.foreground}>
-            {'<'}
-          </PixelText>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <PixelText variant="heading" size="sm" color={colors.foreground}>{'<'}</PixelText>
         </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
+        <View style={styles.headerCenter}>
+          <PixelText variant="body" size="xs" color={colors.textMuted} uppercase>
+            {market.category}
+          </PixelText>
           <PixelText variant="body" size="sm" color={colors.foreground} numberOfLines={1}>
-            {market.category.toUpperCase()}
+            {market.title}
           </PixelText>
         </View>
-        <View style={styles.backButton} />
+        {totalOutcomes > 1 && (
+          <View style={styles.counterBadge}>
+            <PixelText variant="heading" size="xs" color={colors.game.gold}>
+              {currentOutcomeIndex + 1}
+            </PixelText>
+            <PixelText variant="body" size="xs" color={colors.textMuted}>
+              {' / '}{totalOutcomes}
+            </PixelText>
+          </View>
+        )}
+        <Pressable onPress={handleBack} style={styles.backTextBtn}>
+          <PixelText variant="heading" size="sm" color={colors.textMuted}>Back</PixelText>
+        </Pressable>
       </View>
 
-      {/* Card */}
+      {/* Swipeable Card */}
       <View style={styles.cardContainer}>
-        <Animated.View
-          style={[
-            styles.card,
-            { transform: [{ scale: cardScale }], opacity: cardOpacity },
-          ]}
-        >
-          {/* Image area */}
-          <View style={styles.cardImageArea}>
-            {hasValidImage ? (
-              <Image
-                source={{ uri: market.image_url! }}
-                style={styles.cardImage}
-                resizeMode="cover"
-                onError={() => setImageError(true)}
-              />
-            ) : (
-              <View style={styles.cardImagePlaceholder}>
-                <PixelText variant="heading" size="3xl" color={colors.textMuted}>
-                  {getCategoryEmoji(market.category)}
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={[styles.card, cardAnimatedStyle]}>
+            {/* === YES Overlay === */}
+            <Animated.View style={[styles.overlay, styles.overlayYes, overlayYesStyle]}>
+              <View style={styles.overlayLabelContainer}>
+                <PixelText variant="heading" size="2xl" color={colors.white} style={styles.overlayLabelYes}>
+                  YES
                 </PixelText>
               </View>
-            )}
-            {/* Category badge overlay */}
-            <View style={styles.cardBadgeRow}>
-              <View style={styles.categoryBadge}>
-                <PixelText variant="heading" size="xs" color={colors.white} uppercase>
-                  {market.subcategory || market.category}
+            </Animated.View>
+
+            {/* === NO Overlay === */}
+            <Animated.View style={[styles.overlay, styles.overlayNo, overlayNoStyle]}>
+              <View style={styles.overlayLabelContainer}>
+                <PixelText variant="heading" size="2xl" color={colors.white} style={styles.overlayLabelNo}>
+                  NO
                 </PixelText>
               </View>
-              {market.status === 'active' && (
-                <View style={styles.liveBadge}>
-                  <PixelText variant="heading" size="xs" color={colors.game.success} uppercase>
-                    LIVE
+            </Animated.View>
+
+            {/* === PASS Overlay === */}
+            <Animated.View style={[styles.overlay, styles.overlayPass, overlayPassStyle]}>
+              <View style={styles.overlayLabelContainer}>
+                <PixelText variant="heading" size="2xl" color={colors.white}>
+                  PASS
+                </PixelText>
+              </View>
+            </Animated.View>
+
+            {/* === Card Image === */}
+            <View style={styles.cardImageArea}>
+              {hasValidImage ? (
+                <Image
+                  source={{ uri: outcomeImageUrl! }}
+                  style={styles.cardImage}
+                  resizeMode="cover"
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <View style={styles.cardImagePlaceholder}>
+                  <PixelText variant="heading" size="3xl" color={colors.textMuted}>
+                    {getCategoryEmoji(market.category)}
+                  </PixelText>
+                </View>
+              )}
+
+              {/* Category badge */}
+              <View style={styles.cardBadgeRow}>
+                <View style={styles.categoryBadge}>
+                  <PixelText variant="heading" size="xs" color={colors.white} uppercase>
+                    {market.subcategory || market.category}
+                  </PixelText>
+                </View>
+                {market.status === 'active' && (
+                  <View style={styles.liveBadge}>
+                    <PixelText variant="heading" size="xs" color={colors.game.success} uppercase>
+                      LIVE
+                    </PixelText>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* === Card Info (outcome) === */}
+            <View style={styles.cardInfo}>
+              <PixelText
+                variant="body"
+                size="xl"
+                color={colors.foreground}
+                numberOfLines={2}
+                style={styles.cardTitle}
+              >
+                {market.title}
+              </PixelText>
+
+              <View style={styles.divider} />
+
+              {/* Outcome row */}
+              <View style={styles.outcomeRow}>
+                <View style={styles.outcomeLabel}>
+                  <View style={styles.outcomeDot} />
+                  <PixelText variant="body" size="xl" color={colors.foreground} numberOfLines={1}>
+                    {currentOutcome.label}
+                  </PixelText>
+                </View>
+                <PixelText variant="heading" size="2xl" color={colors.game.gold}>
+                  {probability}%
+                </PixelText>
+              </View>
+
+              {/* Volume */}
+              {market.volume > 0 && (
+                <View style={styles.volumeRow}>
+                  <PixelText variant="body" size="sm" color={colors.textMuted}>
+                    Vol: ${market.volume >= 1_000_000
+                      ? `${(market.volume / 1_000_000).toFixed(1)}M`
+                      : market.volume >= 1_000
+                        ? `${(market.volume / 1_000).toFixed(1)}K`
+                        : market.volume.toLocaleString()}
                   </PixelText>
                 </View>
               )}
             </View>
-          </View>
-
-          {/* Info section */}
-          <View style={styles.cardInfo}>
-            <PixelText
-              variant="body"
-              size="xl"
-              color={colors.foreground}
-              numberOfLines={3}
-              style={styles.cardTitle}
-            >
-              {market.title}
-            </PixelText>
-
-            {/* Probability bar */}
-            {outcomeA && outcomeB && (
-              <View style={styles.cardProbability}>
-                <ProbabilityBar
-                  probabilityA={outcomeA.probability}
-                  probabilityB={outcomeB.probability}
-                  labelA={outcomeA.label}
-                  labelB={outcomeB.label}
-                  height={10}
-                  showLabels
-                />
-              </View>
-            )}
-
-            {/* Volume */}
-            {market.volume > 0 && (
-              <View style={styles.cardVolume}>
-                <PixelText variant="body" size="sm" color={colors.textMuted}>
-                  Vol: ${market.volume.toLocaleString()}
-                </PixelText>
-              </View>
-            )}
-          </View>
-        </Animated.View>
+          </Animated.View>
+        </GestureDetector>
       </View>
+
+      {/* Outcome dots */}
+      {totalOutcomes > 1 && (
+        <View style={styles.dotsContainer}>
+          <OutcomeDots
+            total={totalOutcomes}
+            current={currentOutcomeIndex}
+            bettedIndices={bettedIndices}
+          />
+        </View>
+      )}
 
       {/* Action buttons row */}
       <View style={styles.actionsRow}>
         <ActionButton
           label="NO"
+          icon={'\u2190'}
           color="#ef4444"
           shadowColor="#b91c1c"
           onPress={handleNo}
         />
         <ActionButton
           label="PASS"
+          icon={'\u2193'}
           color="#6b7280"
           shadowColor="#4b5563"
           onPress={handlePass}
         />
         <ActionButton
           label="YES"
+          icon={'\u2192'}
           color="#22c55e"
           shadowColor="#15803d"
           onPress={handleYes}
@@ -746,12 +950,15 @@ export function EventDetailScreen() {
       </View>
 
       {/* Bet modal */}
-      <BetModal
-        visible={modalVisible}
-        direction={betDirection}
-        market={market}
-        onClose={handleCloseModal}
-      />
+      {currentOutcome && (
+        <BetModal
+          visible={modalVisible}
+          direction={betDirection}
+          market={market}
+          outcome={currentOutcome}
+          onClose={handleCloseModal}
+        />
+      )}
     </ScreenContainer>
   );
 }
@@ -761,13 +968,13 @@ export function EventDetailScreen() {
 // ============================================
 
 const styles = StyleSheet.create({
-  // Header
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[2],
     zIndex: 10,
+    gap: spacing[2],
   },
   backButton: {
     width: 40,
@@ -775,12 +982,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitleContainer: {
+  backTextBtn: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+  },
+  headerCenter: {
     flex: 1,
     alignItems: 'center',
+    gap: 2,
   },
-
-  // Center (loading/error)
+  counterBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.12)',
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.25)',
+  },
   centerContainer: {
     flex: 1,
     alignItems: 'center',
@@ -796,7 +1016,7 @@ const styles = StyleSheet.create({
     borderColor: colors.card.border,
   },
 
-  // Card container
+  // Card
   cardContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -816,6 +1036,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 16,
     elevation: 12,
+  },
+
+  // Swipe overlays
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: borderRadius.xl,
+  },
+  overlayYes: {
+    backgroundColor: 'rgba(34, 197, 94, 0.6)',
+  },
+  overlayNo: {
+    backgroundColor: 'rgba(239, 68, 68, 0.6)',
+  },
+  overlayPass: {
+    backgroundColor: 'rgba(107, 114, 128, 0.6)',
+  },
+  overlayLabelContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlayLabelYes: {
+    transform: [{ rotate: `${OVERLAY_ROTATION}deg` }],
+  },
+  overlayLabelNo: {
+    transform: [{ rotate: `${-OVERLAY_ROTATION}deg` }],
   },
 
   // Card image
@@ -864,26 +1112,50 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     paddingTop: spacing[3],
     backgroundColor: '#151528',
+    gap: spacing[2],
   },
   cardTitle: {
     textAlign: 'center',
-    marginBottom: spacing[3],
   },
-  cardProbability: {
-    marginBottom: spacing[2],
+  divider: {
+    height: 1,
+    backgroundColor: '#2a2a4a',
   },
-  cardVolume: {
+  outcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  outcomeLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flex: 1,
+  },
+  outcomeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.game.gold,
+  },
+  volumeRow: {
     alignItems: 'center',
   },
 
-  // Action buttons row
+  // Dots
+  dotsContainer: {
+    paddingVertical: spacing[2],
+    alignItems: 'center',
+  },
+
+  // Action buttons
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'stretch',
     gap: spacing[3],
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
+    paddingTop: spacing[2],
     paddingBottom: spacing[6],
   },
   actionButtonWrap: {
@@ -945,8 +1217,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: borderRadius.md,
   },
-
-  // Modal image
   modalImageWrap: {
     width: '100%',
     height: 120,
@@ -959,8 +1229,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-
-  // Modal outcome
   modalOutcomeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -972,8 +1240,6 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-
-  // Connect wallet
   connectWalletBtn: {
     height: 48,
     position: 'relative',
@@ -999,8 +1265,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     backgroundColor: '#7c3aed',
   },
-
-  // Connected wallet row
   walletConnectedRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1019,8 +1283,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#22c55e',
   },
-
-  // Amount selector
   amountSection: {
     gap: spacing[2],
     marginBottom: spacing[4],
@@ -1045,8 +1307,6 @@ const styles = StyleSheet.create({
     borderColor: colors.game.gold,
     backgroundColor: '#1f1f3a',
   },
-
-  // Modal bottom
   modalBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',

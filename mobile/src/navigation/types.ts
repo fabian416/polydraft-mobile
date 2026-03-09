@@ -18,7 +18,7 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   Home: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList>;
-  EventDetail: { eventId: string };
+  EventDetail: { eventId: string; swipeMode?: boolean; startEventIndex?: number };
   PackFlow: NavigatorScreenParams<PackStackParamList>;
 };
 

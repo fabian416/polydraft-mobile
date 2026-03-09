@@ -14,6 +14,7 @@ import Animated, {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { PixelText } from '../common';
 import { haptic } from '../../lib/haptics';
+import { playSound } from '../../lib/audio';
 import { colors, spacing, borderRadius, shadows } from '../../lib/theme';
 import { formatProbability, getTier, getTierColor } from '../../lib/scoring/calculator';
 import { getEventRarity, getRarityConfig } from '../../lib/rarity';
@@ -49,7 +50,7 @@ const DEFAULT_EMOJI = '\u{1F3AF}';
 
 // Card dimensions - dominate the screen like Balatro jokers
 const CARD_WIDTH = SCREEN_WIDTH - spacing[4] * 2;
-const CARD_HEIGHT = SCREEN_HEIGHT * 0.68;
+const CARD_HEIGHT = SCREEN_HEIGHT * 0.62;
 
 interface DraftPickerProps {
   event: Event;
@@ -76,6 +77,7 @@ function PickButton({
   const displayText = direction === 'left' ? arrow + short : direction === 'down' ? arrow + short : short + arrow;
 
   const handlePressIn = () => {
+    playSound('nav_tick');
     RNAnimated.timing(translateY, {
       toValue: 3,
       duration: 50,
@@ -132,6 +134,7 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
   const triggerPick = useCallback(
     (outcome: Outcome) => {
       haptic('heavy');
+      playSound('focus_pop');
       onPick(outcome);
     },
     [onPick],
@@ -185,6 +188,7 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
         translateY.value = withTiming(exitDirection, { duration: EXIT_DURATION });
         cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
         runOnJS(triggerPick)('draw');
+
         return;
       }
 
@@ -197,11 +201,13 @@ export function DraftPicker({ event, position, total, onPick }: DraftPickerProps
             translateX.value = withTiming(-EXIT_X, { duration: EXIT_DURATION });
             cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
             runOnJS(triggerPick)('a');
+    
           } else {
             // Swipe right -> outcome B (right team)
             translateX.value = withTiming(EXIT_X, { duration: EXIT_DURATION });
             cardOpacity.value = withTiming(0, { duration: EXIT_DURATION });
             runOnJS(triggerPick)('b');
+    
           }
           return;
         }

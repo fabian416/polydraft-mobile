@@ -1,10 +1,6 @@
 /**
  * Audio manager for game SFX using expo-av.
- * Matches the sound names from the PSG1 web version.
- *
- * Currently a no-op when .mp3 files aren't bundled — structured so
- * dropping real assets into /assets/sounds/ and uncommenting the
- * require() lines below is all that's needed.
+ * Retro 8-bit sounds from polydraftpsg1 web client (CC0 — public domain).
  */
 
 import { Audio } from 'expo-av';
@@ -13,35 +9,34 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export type SoundName =
   | 'pack_open'
   | 'card_deal'
-  | 'card_pick'
   | 'reveal_common'
   | 'reveal_rare'
   | 'reveal_epic'
   | 'reveal_legendary'
-  | 'modal_open'
+  | 'focus_pop'
+  | 'nav_tick'
+  | 'nav_back'
+  | 'carousel_slide'
+  | 'amount_tick'
   | 'modal_close'
   | 'purchase_confirm'
-  | 'purchase_success'
-  | 'error';
+  | 'purchase_success';
 
-/**
- * Map of sound names to bundled assets.
- * Uncomment and add require() calls when .mp3 files are available
- * in /assets/sounds/:
- */
-const soundFiles: Partial<Record<SoundName, number>> = {
-  // pack_open: require('../../assets/sounds/pack_open.mp3'),
-  // card_deal: require('../../assets/sounds/card_deal.mp3'),
-  // card_pick: require('../../assets/sounds/card_pick.mp3'),
-  // reveal_common: require('../../assets/sounds/reveal_common.mp3'),
-  // reveal_rare: require('../../assets/sounds/reveal_rare.mp3'),
-  // reveal_epic: require('../../assets/sounds/reveal_epic.mp3'),
-  // reveal_legendary: require('../../assets/sounds/reveal_legendary.mp3'),
-  // modal_open: require('../../assets/sounds/modal_open.mp3'),
-  // modal_close: require('../../assets/sounds/modal_close.mp3'),
-  // purchase_confirm: require('../../assets/sounds/purchase_confirm.mp3'),
-  // purchase_success: require('../../assets/sounds/purchase_success.mp3'),
-  // error: require('../../assets/sounds/error.mp3'),
+const soundFiles: Record<SoundName, number> = {
+  pack_open: require('../../assets/sounds/pack_open.mp3'),
+  card_deal: require('../../assets/sounds/card_deal.mp3'),
+  reveal_common: require('../../assets/sounds/reveal_common.mp3'),
+  reveal_rare: require('../../assets/sounds/reveal_rare.mp3'),
+  reveal_epic: require('../../assets/sounds/reveal_epic.mp3'),
+  reveal_legendary: require('../../assets/sounds/reveal_legendary.mp3'),
+  focus_pop: require('../../assets/sounds/focus_pop.mp3'),
+  nav_tick: require('../../assets/sounds/nav_tick.mp3'),
+  nav_back: require('../../assets/sounds/nav_back.mp3'),
+  carousel_slide: require('../../assets/sounds/carousel_slide.mp3'),
+  amount_tick: require('../../assets/sounds/amount_tick.mp3'),
+  modal_close: require('../../assets/sounds/modal_close.mp3'),
+  purchase_confirm: require('../../assets/sounds/purchase_confirm.mp3'),
+  purchase_success: require('../../assets/sounds/purchase_success.mp3'),
 };
 
 const MUTED_KEY = 'polydraft_audio_muted';
@@ -52,10 +47,6 @@ const loadedSounds: Partial<Record<SoundName, Audio.Sound>> = {};
 let muted = false;
 let initialized = false;
 
-/**
- * Initialize audio settings (restore muted state).
- * Call once on app start.
- */
 async function initAudio(): Promise<void> {
   if (initialized) return;
   initialized = true;
@@ -74,8 +65,7 @@ async function initAudio(): Promise<void> {
 initAudio();
 
 /**
- * Configure audio mode for game SFX.
- * Call early in the app lifecycle (e.g., on first screen mount).
+ * Configure audio mode and preload critical sounds.
  */
 export async function preloadSounds(): Promise<void> {
   await initAudio();
@@ -85,12 +75,17 @@ export async function preloadSounds(): Promise<void> {
     shouldDuckAndroid: true,
   });
 
-  // Pre-load any available sound files
-  const entries = Object.entries(soundFiles) as [SoundName, number][];
+  const criticalSounds: SoundName[] = [
+    'nav_tick', 'focus_pop', 'pack_open', 'card_deal',
+    'carousel_slide', 'purchase_success',
+  ];
+
   await Promise.allSettled(
-    entries.map(async ([name, file]) => {
+    criticalSounds.map(async (name) => {
       if (loadedSounds[name]) return;
       try {
+        const file = soundFiles[name];
+        if (!file) return;
         const { sound } = await Audio.Sound.createAsync(file);
         loadedSounds[name] = sound;
       } catch {
@@ -102,16 +97,14 @@ export async function preloadSounds(): Promise<void> {
 
 /**
  * Play a named sound effect.
- * If the sound file isn't available, this is a silent no-op.
  */
 export async function playSound(name: SoundName): Promise<void> {
   if (muted) return;
 
   try {
     const file = soundFiles[name];
-    if (!file) return; // No sound file available yet
+    if (!file) return;
 
-    // Reuse or create sound
     if (!loadedSounds[name]) {
       const { sound } = await Audio.Sound.createAsync(file);
       loadedSounds[name] = sound;
@@ -146,7 +139,6 @@ export function isMuted(): boolean {
 
 /**
  * Unload all cached sounds to free memory.
- * Call when leaving the game or on app background.
  */
 export async function unloadSounds(): Promise<void> {
   await Promise.allSettled(

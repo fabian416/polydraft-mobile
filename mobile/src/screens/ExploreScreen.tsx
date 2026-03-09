@@ -126,11 +126,23 @@ export function ExploreScreen() {
     }
   }, [hasMore, isLoadingMarkets, appendMarkets, setLoadingMarkets, getQueryParams, markets.length]);
 
+  const { setSwipeModeEvents, setCurrentEventIndex } = useExploreStore();
+
   const handleCardPress = useCallback(
     (market: ExploreMarket) => {
-      navigation.navigate('EventDetail', { eventId: market.id });
+      // Set up swipe mode: store all event IDs so user can swipe through
+      const eventIds = markets.map((m) => m.id);
+      const startIndex = eventIds.indexOf(market.id);
+      setSwipeModeEvents(eventIds);
+      if (startIndex >= 0) setCurrentEventIndex(startIndex);
+
+      navigation.navigate('EventDetail', {
+        eventId: market.id,
+        swipeMode: true,
+        startEventIndex: startIndex >= 0 ? startIndex : 0,
+      });
     },
-    [navigation]
+    [navigation, markets, setSwipeModeEvents, setCurrentEventIndex]
   );
 
   // Markets are already filtered server-side by category and search

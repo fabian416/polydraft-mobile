@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { WalletProvider } from './src/providers/WalletProvider';
 import { RootNavigator } from './src/navigation';
+import { preloadSounds } from './src/lib/audio';
 
 const DarkTheme = {
   ...DefaultTheme,
@@ -28,6 +30,12 @@ export default function App() {
     'JetBrainsMono-Regular': require('./assets/fonts/JetBrainsMono-Regular.ttf'),
   });
 
+  useEffect(() => {
+    if (fontsLoaded) {
+      preloadSounds();
+    }
+  }, [fontsLoaded]);
+
   if (!fontsLoaded) {
     return (
       <View style={styles.loading}>
@@ -37,18 +45,23 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider>
-      <WalletProvider>
-        <NavigationContainer theme={DarkTheme}>
-          <RootNavigator />
-          <StatusBar style="light" />
-        </NavigationContainer>
-      </WalletProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.flex}>
+      <SafeAreaProvider>
+        <WalletProvider>
+          <NavigationContainer theme={DarkTheme}>
+            <RootNavigator />
+            <StatusBar style="light" />
+          </NavigationContainer>
+        </WalletProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     backgroundColor: '#0a0a1a',

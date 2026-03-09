@@ -47,10 +47,12 @@ interface ExploreOutcomeRow {
   event_id: string;
   label: string;
   probability: number;
+  sort_order?: number;
   image_url?: string;
   image_slug?: string;
   clob_id?: string;
   ticker?: string;
+  jupiter_market_id?: string;
 }
 
 interface EventWithOutcomes extends Event {
@@ -66,7 +68,11 @@ function transformEventToExploreMarket(event: EventWithOutcomes): ExploreMarket 
   let outcomes: ExploreOutcome[];
 
   if (event.explore_outcomes && event.explore_outcomes.length > 0) {
-    outcomes = event.explore_outcomes.map((o) => ({
+    // Sort by sort_order (matching web transform)
+    const sorted = [...event.explore_outcomes].sort(
+      (a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999)
+    );
+    outcomes = sorted.map((o) => ({
       id: o.id,
       label: o.label,
       probability: o.probability,

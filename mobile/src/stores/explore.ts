@@ -14,6 +14,10 @@ interface ExploreState {
   // Multi-outcome carousel state
   currentOutcomeIndex: number;
 
+  // Swipe mode state
+  currentEventIndex: number;
+  swipeModeEventIds: string[];
+
   // Pending bets (for future implementation)
   pendingBets: PendingBet[];
 
@@ -34,6 +38,10 @@ interface ExploreState {
   nextOutcome: () => void;
   prevOutcome: () => void;
 
+  setSwipeModeEvents: (ids: string[]) => void;
+  nextEvent: () => void;
+  setCurrentEventIndex: (index: number) => void;
+
   addPendingBet: (bet: PendingBet) => void;
   removePendingBet: (marketId: string, outcomeId: string) => void;
   clearPendingBets: () => void;
@@ -48,6 +56,8 @@ const initialState = {
   selectedEvent: null,
   isLoadingEvent: false,
   currentOutcomeIndex: 0,
+  currentEventIndex: 0,
+  swipeModeEventIds: [],
   pendingBets: [],
   cursor: null,
   hasMore: true,
@@ -121,6 +131,30 @@ export const useExploreStore = create<ExploreState>()((set, get) => ({
     if (currentOutcomeIndex > 0) {
       set({ currentOutcomeIndex: currentOutcomeIndex - 1 });
     }
+  },
+
+  setSwipeModeEvents: (ids) => {
+    set({ swipeModeEventIds: ids, currentEventIndex: 0 });
+  },
+
+  nextEvent: () => {
+    const { swipeModeEventIds, currentEventIndex, markets } = get();
+    const maxIndex = swipeModeEventIds.length - 1;
+    if (currentEventIndex >= maxIndex) return;
+
+    const newIndex = currentEventIndex + 1;
+    const nextEventId = swipeModeEventIds[newIndex];
+    const nextEvent = markets.find((m) => m.id === nextEventId) ?? null;
+
+    set({
+      currentEventIndex: newIndex,
+      currentOutcomeIndex: 0,
+      selectedEvent: nextEvent,
+    });
+  },
+
+  setCurrentEventIndex: (index) => {
+    set({ currentEventIndex: index });
   },
 
   addPendingBet: (bet) => {

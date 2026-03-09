@@ -8,6 +8,7 @@ import { PackSprite } from '../components/game/PackSprite';
 import { PixelText } from '../components/common';
 import { colors, spacing, shadows } from '../lib/theme';
 import { haptic } from '../lib/haptics';
+import { playSound } from '../lib/audio';
 import { useWallet } from '../providers/WalletProvider';
 import { buildUsdcTransferTransaction, sendAndConfirmTransfer } from '../lib/solana/transfer';
 import type { PackStackParamList } from '../navigation/types';
@@ -68,14 +69,13 @@ export function PremiumPackScreen() {
       // 4. Success feedback
       setPurchaseState('success');
       haptic('success');
-
+      playSound('purchase_confirm');
       // 5. Navigate to pack opening
       navigation.navigate('PackOpen', { premium: true });
     } catch (error: any) {
       console.error('Purchase failed:', error);
       setPurchaseState('error');
       haptic('error');
-
       const message =
         error?.message?.includes('insufficient')
           ? 'Insufficient USDC balance. Please fund your wallet and try again.'
@@ -90,6 +90,7 @@ export function PremiumPackScreen() {
 
   const handleConnectWallet = useCallback(async () => {
     haptic('medium');
+    playSound('nav_tick');
 
     if (!connected) {
       try {
@@ -106,6 +107,7 @@ export function PremiumPackScreen() {
   }, [connected, connect, handlePurchase]);
 
   const handleBack = useCallback(() => {
+    playSound('nav_back');
     navigation.goBack();
   }, [navigation]);
 
