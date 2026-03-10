@@ -1,6 +1,3 @@
-<p align="center">
-  <img width="1536" height="1024" alt="Image" src="https://github.com/user-attachments/assets/462b6cad-4243-416f-8ecd-eb81b46ab7e2" />
-
 <h1 align="center">Polydraft Mobile</h1>
 
 <p align="center">
@@ -26,13 +23,13 @@ Each pack contains 5 live prediction events. Swipe to pick outcomes, wait for th
 
 This is the **native Android app** built with React Native and Expo, using Solana Mobile Wallet Adapter (MWA) for on-device wallet signing.
 
-## Screenshots
+## Explore Markets
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/6e22341f-3fba-4c98-a01d-cd8a99cb6c65" width="24%" />
-  <img src="https://github.com/user-attachments/assets/11a6cae3-b29f-43d9-878f-a1210f8f351e" width="24%" />
-  <img src="https://github.com/user-attachments/assets/1589e0e4-8b1d-47fd-8605-7735fae580c6" width="24%" />
-  <img src="https://github.com/user-attachments/assets/cb9009ae-dcc1-43b1-86c5-09f44082cd62" width="24%" />
+  <img src="docs/screenshots/explore-politics.png" width="24%" alt="Politics - Presidential Election 2028" />
+  <img src="docs/screenshots/explore-sports.png" width="24%" alt="Sports - UEFA Champions League" />
+  <img src="docs/screenshots/explore-crypto.png" width="24%" alt="Crypto - BTC Price Prediction" />
+  <img src="docs/screenshots/explore-economy.png" width="24%" alt="Economy - Fed Decision" />
 </p>
 
 ## Features
