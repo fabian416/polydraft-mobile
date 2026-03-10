@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/screenshots/hero-banner.png" alt="Polydraft" />
+</p>
+
 <h1 align="center">Polydraft Mobile</h1>
 
 <p align="center">
